@@ -500,11 +500,13 @@ lz_create_event_interface() {
     ##     1--失败
     ! lz_create_event_interface_file_header "${1}" && return "1"
     local regExpFilename="$( lz_format_filename_regular_expression_string "${2}/${3}" )"
-    if ! sed -n 2p "${PATH_BOOTLOADER}/${1}" | grep -q "^${regExpFilename}"; then
+#selfmod
+    if ! sed -n 3p "${PATH_BOOTLOADER}/${1}" | grep -q "^${regExpFilename}"; then
         sed -i "/$( lz_get_delete_row_regular_expression_string "${3}" )/d" "${PATH_BOOTLOADER}/${1}"
-        sed -i "1a ${2}/${3} # Added by LZRule" "${PATH_BOOTLOADER}/${1}"
+        sed -i "2a ${2}/${3} # Added by LZRule" "${PATH_BOOTLOADER}/${1}"
     fi
-    sed -i "3,\${/$( lz_get_delete_row_regular_expression_string "${3}" )/d;}" "${PATH_BOOTLOADER}/${1}"
+    sed -i "4,\${/$( lz_get_delete_row_regular_expression_string "${3}" )/d;}" "${PATH_BOOTLOADER}/${1}"
+#modded
     chmod +x "${PATH_BOOTLOADER}/${1}"
     ! grep -q "^${regExpFilename}" "${PATH_BOOTLOADER}/${1}" && return "1"
     return "0"
@@ -682,11 +684,13 @@ lz_create_service_event_interface() {
     ##     1--失败
     ! lz_create_event_interface_file_header "${1}" && return "1"
     local regExpFilename="$( lz_format_filename_regular_expression_string "${2}/${3}" )"
-    if ! sed -n 2p "${PATH_BOOTLOADER}/${1}" | grep -q "^${regExpFilename} \$[\{]@[\}] # Added by LZRule"; then
+#selfmod
+    if ! sed -n 3p "${PATH_BOOTLOADER}/${1}" | grep -q "^${regExpFilename} \$[\{]@[\}] # Added by LZRule"; then
         sed -i "/$( lz_get_delete_row_regular_expression_string "${3}" )/d" "${PATH_BOOTLOADER}/${1}"
-        sed -i "1a ${2}/${3} \$\{@\} # Added by LZRule" "${PATH_BOOTLOADER}/${1}"
+        sed -i "2a ${2}/${3} \$\{@\} # Added by LZRule" "${PATH_BOOTLOADER}/${1}"
     fi
-    sed -i "3,\${/$( lz_get_delete_row_regular_expression_string "${3}" )/d;}" "${PATH_BOOTLOADER}/${1}"
+    sed -i "4,\${/$( lz_get_delete_row_regular_expression_string "${3}" )/d;}" "${PATH_BOOTLOADER}/${1}"
+#modded
     chmod +x "${PATH_BOOTLOADER}/${1}"
     ! grep -q "^${regExpFilename} \$[\{]@[\}] # Added by LZRule" "${PATH_BOOTLOADER}/${1}" && return "1"
     return "0"
