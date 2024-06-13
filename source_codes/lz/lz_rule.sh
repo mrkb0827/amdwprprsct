@@ -98,7 +98,7 @@ ISPIP_DATA_UPDATE="update"
 UNMOUNT_WEB_UI="unwebui"
 
 ## 系统记录文件名
-SYSLOG="/tmp/syslog.log"
+SYSLOG="SYSLOG="$(nvram get log_path)/syslog.log"
 
 ## 日期时间自定义格式显示
 lzdate() { date +"%F %T"; }
