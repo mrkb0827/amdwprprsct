@@ -1,5 +1,5 @@
 #!/bin/sh
-# uninstall.sh v4.4.4
+# uninstall.sh v4.7.4
 # By LZ (larsonzhang@gmail.com)
 
 # LZ RULE script for Asuswrt-Merlin Router
@@ -8,10 +8,13 @@
 
 #BEGIN
 
-LZ_VERSION=v4.4.4
-TIMEOUT=10
+LZ_VERSION=v4.7.4
 CURRENT_PATH="${0%/*}"
 [ "${CURRENT_PATH:0:1}" != '/' ] && CURRENT_PATH="$( pwd )${CURRENT_PATH#*.}"
+PATH_LOCK="/var/lock" LOCK_FILE_ID="555"
+LOCK_FILE="${PATH_LOCK}/lz_rule.lock"
+PATH_HOME="$( readlink -f "/root" )"
+{ [ -z "${PATH_HOME}" ] || [ "${PATH_HOME}" = '/' ]; } && PATH_HOME="$( readlink -f "/tmp" )"
 SYSLOG="/tmp/syslog.log"
 lzdate() {  date +"%F %T"; }
 
@@ -23,27 +26,8 @@ lzdate() {  date +"%F %T"; }
     echo
 } | tee -ai "${SYSLOG}" 2> /dev/null
 
-if [ "${1}" != 'y' ] && [ "${1}" != 'Y' ]; then
-    ! read -r -n1 -t ${TIMEOUT} -p "  Automatically terminate after ${TIMEOUT}s, continue uninstallation? [Y/N] " ANSWER \
-        || [ -n "${ANSWER}" ] && echo -e "\r"
-    case ${ANSWER} in
-        Y | y)
-        {
-            echo | tee -ai "${SYSLOG}" 2> /dev/null
-        }
-        ;;
-        *)
-        {
-            {
-                echo
-                echo "  LZ script uninstallation failed."
-                echo -e "  $(lzdate)\n\n"
-            } | tee -ai "${SYSLOG}" 2> /dev/null
-            exit "1"
-        }
-        ;;
-    esac
-fi
+[ ! -d "${PATH_LOCK}" ] && { mkdir -p "${PATH_LOCK}" > /dev/null 2>&1; chmod 777 "${PATH_LOCK}" > /dev/null 2>&1; }
+eval "exec ${LOCK_FILE_ID}<>${LOCK_FILE}"; flock -x "${LOCK_FILE_ID}" > /dev/null 2>&1;
 
 if [ ! -f "${CURRENT_PATH}/lz_rule.sh" ]; then
     {
@@ -52,6 +36,7 @@ if [ ! -f "${CURRENT_PATH}/lz_rule.sh" ]; then
         echo "  LZ script uninstallation failed."
         echo -e "  $(lzdate)\n\n"
     } | tee -ai "${SYSLOG}" 2> /dev/null
+    flock -u "${LOCK_FILE_ID}" > /dev/null 2>&1
     exit "1"
 else
     chmod +x "${CURRENT_PATH}/lz_rule.sh" > /dev/null 2>&1
@@ -75,11 +60,14 @@ rm -f "${CURRENT_PATH}/func/lz_rule_func.sh" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/func/lz_rule_status.sh" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/func/lz_vpn_daemon.sh" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/js/lz_policy_routing.js" > /dev/null 2>&1
-rm -f "${CURRENT_PATH}/images/favicon.png" > /dev/null 2>&1
-rm -f "${CURRENT_PATH}/images/InternetScan.gif" > /dev/null 2>&1
+rm -f "${CURRENT_PATH}/images/alipay.png" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/images/arrow-down.gif" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/images/arrow-top.gif" > /dev/null 2>&1
+rm -f "${CURRENT_PATH}/images/favicon.png" > /dev/null 2>&1
+rm -f "${CURRENT_PATH}/images/InternetScan.gif" > /dev/null 2>&1
+rm -f "${CURRENT_PATH}/images/wechat.png" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/webs/LZ_Policy_Routing_Content.asp" > /dev/null 2>&1
+rm -f "${CURRENT_PATH}/interface/lz_openvpn_event.sh" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/interface/lz_rule_service.sh" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/data/lz_all_cn_cidr.txt" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/data/lz_chinatelecom_cidr.txt" > /dev/null 2>&1
@@ -93,6 +81,7 @@ rm -f "${CURRENT_PATH}/data/lz_hk_cidr.txt" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/data/lz_mo_cidr.txt" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/data/lz_tw_cidr.txt" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/data/cookies.isp" > /dev/null 2>&1
+rm -f "${CURRENT_PATH}/tmp/rtlist.log" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/tmp/status.log" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/tmp/address.log" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/tmp/routing.log" > /dev/null 2>&1
@@ -101,6 +90,7 @@ rm -f "${CURRENT_PATH}/tmp/iptables.log" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/tmp/crontab.log" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/tmp/unlock.log" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/lz_rule.sh" > /dev/null 2>&1
+rm -f "${CURRENT_PATH}/lz_update_ispip_data.sh" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/uninstall.sh" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/Changelog.txt" > /dev/null 2>&1
 rm -f "${CURRENT_PATH}/HowtoInstall.txt" > /dev/null 2>&1
@@ -123,7 +113,9 @@ rmdir "${CURRENT_PATH}" > /dev/null 2>&1
     echo -e "  $(lzdate)\n\n"
 } | tee -ai "${SYSLOG}" 2> /dev/null
 
-[ ! -d "${CURRENT_PATH}" ] && { cd "${CURRENT_PATH%/*}/" || { cd "${HOME}/" || exit "0"; }; }
+flock -u "${LOCK_FILE_ID}" > /dev/null 2>&1
+
+[ ! -d "${CURRENT_PATH}" ] && { cd "${CURRENT_PATH%/*}/" || { cd "${PATH_HOME}/" || exit "0"; }; }
 
 exit "0"
 

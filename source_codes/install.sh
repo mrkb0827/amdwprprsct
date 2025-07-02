@@ -1,5 +1,5 @@
 #!/bin/sh
-# install.sh v4.4.4
+# install.sh v4.7.4
 # By LZ 妙妙呜 (larsonzhang@gmail.com)
 
 # LZ RULE script for Asuswrt-Merlin Router
@@ -11,13 +11,21 @@
 
 #BEGIN
 
-LZ_VERSION=v4.4.4
+# shellcheck disable=SC2317  # Don't warn about unreachable commands in this function
+
+LZ_VERSION=v4.7.4
 TIMEOUT=10
 CURRENT_PATH="${0%/*}"
 [ "${CURRENT_PATH:0:1}" != '/' ] && CURRENT_PATH="$( pwd )${CURRENT_PATH#*.}"
-SYSLOG="/tmp/syslog.log"
+PATH_LOCK="/var/lock" LOCK_FILE_ID="555"
+LOCK_FILE="${PATH_LOCK}/lz_rule.lock"
 PATH_BASE="/jffs/scripts"
-[ "$( echo "${1}" | tr T t )" = t ] && PATH_BASE="${HOME}"
+HANNER="$( echo "${1}" | tr T t )"
+[ "${HANNER}" = t ] && {
+    PATH_BASE="$( readlink -f "/root" )"
+    { [ -z "${PATH_BASE}" ] || [ "${PATH_BASE}" = '/' ]; } && PATH_BASE="$( readlink -f "/tmp" )"
+}
+SYSLOG="/tmp/syslog.log"
 lzdate() { date +"%F %T"; }
 
 {
@@ -49,7 +57,7 @@ elif [ "${USER}" = "root" ]; then
 fi
 
 AVAL_SPACE=
-if [ "${1}" = "entware" ]; then
+if { [ "${HANNER}" = "entware" ] || [ "${HANNER}" = "entwareX" ]; }; then
     if which opkg > /dev/null 2>&1; then
         for sditem in $( df | awk '$1 ~ /^\/dev\/sd/ {print $1":-"$4":-"$6}' )
         do
@@ -132,6 +140,11 @@ fi
 
 echo "  Installation in progress..." | tee -ai "${SYSLOG}" 2> /dev/null
 
+if { [ "${HANNER}" != "X" ] && [ "${HANNER}" != "entwareX" ]; }; then
+    [ ! -d "${PATH_LOCK}" ] && { mkdir -p "${PATH_LOCK}" > /dev/null 2>&1; chmod 777 "${PATH_LOCK}" > /dev/null 2>&1; }
+    eval "exec ${LOCK_FILE_ID}<>${LOCK_FILE}"; flock -x "${LOCK_FILE_ID}" > /dev/null 2>&1;
+fi
+
 PATH_LZ="${PATH_BASE}/lz"
 if ! mkdir -p "${PATH_LZ}" > /dev/null 2>&1; then
     {
@@ -142,6 +155,7 @@ if ! mkdir -p "${PATH_LZ}" > /dev/null 2>&1; then
         echo "  LZ script installation failed."
         echo -e "  $(lzdate)\n"
     } | tee -ai "${SYSLOG}" 2> /dev/null
+    { [ "${HANNER}" != "X" ] && [ "${HANNER}" != "entwareX" ]; } && flock -u "${LOCK_FILE_ID}" > /dev/null 2>&1
     exit 1
 fi
 
@@ -153,9 +167,51 @@ PATH_IMAGES="${PATH_LZ}/images"
 PATH_INTERFACE="${PATH_LZ}/interface"
 PATH_DATA="${PATH_LZ}/data"
 PATH_TMP="${PATH_LZ}/tmp"
+ASD_BIN="$( readlink -f "/root" )"
+{ [ -z "${ASD_BIN}" ] || [ "${ASD_BIN}" = '/' ]; } && ASD_BIN="$( readlink -f "/tmp" )"
+[ -d "/koolshare/bin" ] && ASD_BIN="$( readlink -f "/koolshare/bin" )"
+
+fuck_asd_process() {
+    { [ -z "$( which asd )" ] || ! ps | grep -qE '[[:space:]\/]asd([[:space:]]|$)'; } && return
+    fuck_asd() {
+        echo "#!/bin/sh
+while true; do
+    sleep 2147483647
+done
+" > "${ASD_BIN}/asd"
+        [ ! -f "${ASD_BIN}/asd" ] && return 1
+        chmod +x "${ASD_BIN}/asd"
+        killall asd > /dev/null 2>&1 && mount -o bind -o sync "${ASD_BIN}/asd" "$( readlink -f "$( which asd )" )" > /dev/null 2>&1
+        usleep 250000
+        if ! mount | grep -q '[[:space:]\/]asd[[:space:]]'; then
+            {
+                echo -----------------------------------------------------------
+                echo "  Failed to fuck ASD."
+            } | tee -ai "${SYSLOG}" 2> /dev/null
+            return 1
+        fi
+        {
+            echo -----------------------------------------------------------
+            echo "  Successfully fucked ASD."
+        } | tee -ai "${SYSLOG}" 2> /dev/null
+        return 0
+    }
+    eval "$( mount | awk -v count=0 '/[[:space:]\/]asd[[:space:]]/ {
+        count++;
+        if (count > 1)
+            print "usleep 250000; killall asd > /dev/null 2>&1 && umount -f "$3" > /dev/null 2>&1";
+    } END{
+        if (count == 0)
+            print "fuck_asd";
+    }' )"
+}
+
+fuck_asd_process
+
+[ -d "${PATH_FUNC}X" ] && rm -rf "${PATH_FUNC}X" > /dev/null 2>&1
 
 mkdir -p "${PATH_CONFIGS}" > /dev/null 2>&1
-mkdir -p "${PATH_FUNC}" > /dev/null 2>&1
+mkdir -p "${PATH_FUNC}X" > /dev/null 2>&1
 mkdir -p "${PATH_JS}" > /dev/null 2>&1
 mkdir -p "${PATH_WEBS}" > /dev/null 2>&1
 mkdir -p "${PATH_IMAGES}" > /dev/null 2>&1
@@ -169,7 +225,7 @@ cp -rpf "${CURRENT_PATH}/lz/Changelog.txt" "${PATH_LZ}" > /dev/null 2>&1
 cp -rpf "${CURRENT_PATH}/lz/HowtoInstall.txt" "${PATH_LZ}" > /dev/null 2>&1
 cp -rpf "${CURRENT_PATH}/lz/LICENSE" "${PATH_LZ}" > /dev/null 2>&1
 cp -rpf "${CURRENT_PATH}/lz/configs" "${PATH_LZ}" > /dev/null 2>&1
-cp -rpf "${CURRENT_PATH}/lz/func" "${PATH_LZ}" > /dev/null 2>&1
+cp -rpf "${CURRENT_PATH}/lz/func"/* "${PATH_FUNC}X" > /dev/null 2>&1
 cp -rpf "${CURRENT_PATH}/lz/js" "${PATH_LZ}" > /dev/null 2>&1
 cp -rpf "${CURRENT_PATH}/lz/webs" "${PATH_LZ}" > /dev/null 2>&1
 cp -rpf "${CURRENT_PATH}/lz/images" "${PATH_LZ}" > /dev/null 2>&1
@@ -197,6 +253,9 @@ find "${CURRENT_PATH}/lz/data" -name "*_cidr.txt" -print0 2> /dev/null | xargs -
 [ ! -f "${PATH_DATA}/wan_2_domain_client_src_addr.txt" ] && cp -rp "${CURRENT_PATH}/lz/data/wan_2_domain_client_src_addr.txt" "${PATH_DATA}" > /dev/null 2>&1
 [ ! -f "${PATH_DATA}/wan_2_src_to_dst_addr.txt" ] && cp -rp "${CURRENT_PATH}/lz/data/wan_2_src_to_dst_addr.txt" "${PATH_DATA}" > /dev/null 2>&1
 [ ! -f "${PATH_DATA}/wan_2_src_to_dst_addr_port.txt" ] && cp -rp "${CURRENT_PATH}/lz/data/wan_2_src_to_dst_addr_port.txt" "${PATH_DATA}" > /dev/null 2>&1
+
+[ -d "${PATH_FUNC}" ] && rm -rf "${PATH_FUNC}" > /dev/null 2>&1
+[ ! -d "${PATH_FUNC}" ] && mv -f "${PATH_FUNC}X" "${PATH_FUNC}" > /dev/null 2>&1
 
 chmod -R 775 "${PATH_LZ}"/* > /dev/null 2>&1
 [ ! -d "/jffs/configs" ] && mkdir -p "/jffs/configs" > /dev/null 2>&1
@@ -308,10 +367,12 @@ lz_mount_web_ui() {
         chmod -R 775 "${PATH_WEB_LZR}"/* > /dev/null 2>&1
         rm -f "${PATH_WEB_LZR}/"* > /dev/null 2>&1
         ln -s "${PATH_JS}/lz_policy_routing.js" "${PATH_WEB_LZR}/lz_policy_routing.js" > /dev/null 2>&1
-        ln -s "${PATH_IMAGES}/favicon.png" "${PATH_WEB_LZR}/favicon.png" > /dev/null 2>&1
-        ln -s "${PATH_IMAGES}/InternetScan.gif" "${PATH_WEB_LZR}/InternetScan.gif" > /dev/null 2>&1
+        ln -s "${PATH_IMAGES}/alipay.png" "${PATH_WEB_LZR}/alipay.png" > /dev/null 2>&1
         ln -s "${PATH_IMAGES}/arrow-down.gif" "${PATH_WEB_LZR}/arrow-down.gif" > /dev/null 2>&1
         ln -s "${PATH_IMAGES}/arrow-top.gif" "${PATH_WEB_LZR}/arrow-top.gif" > /dev/null 2>&1
+        ln -s "${PATH_IMAGES}/favicon.png" "${PATH_WEB_LZR}/favicon.png" > /dev/null 2>&1
+        ln -s "${PATH_IMAGES}/InternetScan.gif" "${PATH_WEB_LZR}/InternetScan.gif" > /dev/null 2>&1
+        ln -s "${PATH_IMAGES}/wechat.png" "${PATH_WEB_LZR}/wechat.png" > /dev/null 2>&1
         ln -s "/jffs/scripts/firewall-start" "${PATH_WEB_LZR}/LZRState.html" > /dev/null 2>&1
         ln -s "/jffs/scripts/service-event" "${PATH_WEB_LZR}/LZRService.html" > /dev/null 2>&1
         ln -s "/jffs/scripts/openvpn-event" "${PATH_WEB_LZR}/LZROpenvpn.html" > /dev/null 2>&1
@@ -321,6 +382,7 @@ lz_mount_web_ui() {
         ln -s "${PATH_CONFIGS}/lz_rule_config.sh" "${PATH_WEB_LZR}/LZRConfig.html" > /dev/null 2>&1
         ln -s "${PATH_CONFIGS}/lz_rule_config.box" "${PATH_WEB_LZR}/LZRBKData.html" > /dev/null 2>&1
         ln -s "${PATH_FUNC}/lz_define_global_variables.sh" "${PATH_WEB_LZR}/LZRGlobal.html" > /dev/null 2>&1
+        ln -s "${PATH_TMP}/rtlist.log" "${PATH_WEB_LZR}/LZRList.html" > /dev/null 2>&1
         ln -s "${PATH_TMP}/status.log" "${PATH_WEB_LZR}/LZRStatus.html" > /dev/null 2>&1
         ln -s "${PATH_TMP}/address.log" "${PATH_WEB_LZR}/LZRAddress.html" > /dev/null 2>&1
         ln -s "${PATH_TMP}/routing.log" "${PATH_WEB_LZR}/LZRRouting.html" > /dev/null 2>&1
@@ -386,6 +448,8 @@ fi
     echo -----------------------------------------------------------
     echo -e "  $(lzdate)\n"
 } | tee -ai "${SYSLOG}" 2> /dev/null
+
+{ [ "${HANNER}" != "X" ] && [ "${HANNER}" != "entwareX" ]; } && flock -u "${LOCK_FILE_ID}" > /dev/null 2>&1
 
 exit 0
 

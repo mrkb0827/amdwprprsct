@@ -1,5 +1,5 @@
 #!/bin/sh
-# lz_initialize_config.sh v4.4.4
+# lz_initialize_config.sh v4.7.4
 # By LZ 妙妙呜 (larsonzhang@gmail.com)
 
 ## 初始化脚本配置
@@ -24,17 +24,14 @@ lz_variable_initialize() {
     dnsmasq_enable="0"
     ! dnsmasq -v 2> /dev/null | grep -w 'ipset' | grep -qvw 'no[\-]ipset' && dnsmasq_enable="1"
     param_list=""
-    param_default_list=""
-    ini_param_default_list=""
 }
 
 ## 卸载变量函数
 ## 输入项：无
 ## 返回值：无
 lz_variable_uninitialize() {
-    eval "$( echo "${param_list}" | sed "s/^[[:alnum:]_][[:alnum:]_]*$/unset local_& local_ini_& local_&_changed local_&_flag/g" )"
-    unset param_list param_default_list ini_param_default_list
-    unset local_default local_changed local_reinstall dnsmasq_enable
+    eval "$( echo "${param_list}" | sed "s/^[[:alnum:]_]\+$/unset local_& local_ini_& local_&_changed local_&_flag local_ini_&_flag/g" )"
+    unset local_default local_changed local_reinstall dnsmasq_enable param_list
 }
 
 ## 初始化配置参数函数
@@ -42,7 +39,8 @@ lz_variable_uninitialize() {
 ##     全局常量及变量
 ## 返回值：无
 lz_init_cfg_data() {
-#BEGIN_PARAM（此注释不可修改及删除）
+## 以下注释不可修改及删除
+<<EOF_INI_PARAM
     local_ini_version="${LZ_VERSION}"
     local_ini_all_foreign_wan_port=0
     local_ini_chinatelecom_wan_port=0
@@ -107,6 +105,7 @@ lz_init_cfg_data() {
     local_ini_usage_mode=0
     local_ini_custom_hosts=5
     local_ini_custom_hosts_file="\"${PATH_DATA}/custom_hosts.txt\""
+    local_ini_repo_site=0
     local_ini_dn_pre_resolved=0
     local_ini_pre_dns="\"8.8.8.8\""
     local_ini_dn_cache_time=864000
@@ -135,21 +134,56 @@ lz_init_cfg_data() {
     local_ini_custom_dualwan_scripts=5
     local_ini_custom_dualwan_scripts_filename="\"${PATH_LZ}/custom_dualwan_scripts.sh\""
     local_ini_udpxy_used=5
-#END_PARAM（此注释不可修改及删除）
-    param_list="$( sed -n "/^[[:space:]]*#BEGIN_PARAM/,/^[[:space:]]*#END_PARAM/{
-            /^[[:space:]]*local_ini_[[:alnum:]_][[:alnum:]_]*[=].*$/!d;
-            s/^[[:space:]]*local_ini_\([[:alnum:]_][[:alnum:]_]*\)[=].*$/\1/g;
+EOF_INI_PARAM
+## 以上注释不可修改及删除
+    eval "$( sed -n "/^[[:space:]]*<<EOF_INI_PARAM/,/^[[:space:]]*EOF_INI_PARAM/{
+        /^[[:space:]]*local_ini_[[:alnum:]_]\+[=].*$/!d;
+        s/^[[:space:]]*\(local_ini_[[:alnum:]_]\+[=][^[:space:]#]*\)/\1/g;
+        p
+    }" "${PATH_FUNC}/lz_initialize_config.sh" 2> /dev/null \
+    | awk -F '=' '!i[$1]++ {print $0}' )"
+    param_list="$( sed -n "/^[[:space:]]*<<EOF_INI_PARAM/,/^[[:space:]]*EOF_INI_PARAM/{
+            /^[[:space:]]*local_ini_[[:alnum:]_]\+[=].*$/!d;
+            s/^[[:space:]]*local_ini_\([[:alnum:]_]\+\)[=].*$/\1/g;
             p
-        }" "${PATH_FUNC}/lz_initialize_config.sh" 2> /dev/null )" 
-    eval "$( echo "${param_list}" | sed "s/^[[:alnum:]_][[:alnum:]_]*$/local_&=\"\${local_ini_&}\"/" )"
-    param_default_list="$( eval "$( echo "${param_list}" \
+        }" "${PATH_FUNC}/lz_initialize_config.sh" 2> /dev/null \
+        | awk '!i[$1]++ {print $1}' )"
+    eval "$( echo "${param_list}" | sed "s/^[[:alnum:]_]\+$/local_&=\"\${local_ini_&}\"/" )"
+}
+
+## 获取配置参数缺省值列表函数
+## 输入项：
+##     全局变量
+## 返回值：
+##     配置参数缺省值列表
+lz_get_param_default_list() {
+    eval "$( echo "${param_list}" \
         | sed -n "/^all_foreign_wan_port$/,/^custom_dualwan_scripts_filename$/{
-            s/^[[:alnum:]_][[:alnum:]_]*$/echo &=\"\${local_&}\"/;
+            s/^[[:alnum:]_]\+$/echo &=\"\${local_&}\"/;
             p
-        }" )" | sed 's/\"//g' )"
-    ini_param_default_list="$( eval "$( echo "${param_list}" \
-        | sed "s/^[[:alnum:]_][[:alnum:]_]*$/echo &=\"\${local_ini_&}\"/" )" \
-        | sed 's/\"//g' )"
+        }" )" | sed 's/\"//g'
+}
+
+## 获取备份配置参数缺省值列表函数
+## 输入项：
+##     全局变量
+## 返回值：
+##     备份配置参数缺省值列表
+lz_get_ini_param_default_list() {
+    eval "$( echo "${param_list}" \
+        | sed "s/^[[:alnum:]_]\+$/echo &=\"\${local_ini_&}\"/" )" \
+        | sed 's/\"//g'
+}
+
+## 获取配置参数状态函数
+## 输入项：
+##     全局变量
+## 返回值：
+##     1--不完整
+lz_get_data_status() {
+    eval "$( echo "${param_list}" | sed -n "/^all_foreign_wan_port$/,/^custom_dualwan_scripts_filename$/{
+            s/^[[:alnum:]_]\+$/echo \"& \${local_&_flag}\"/;p}" )" \
+        | awk '$2 != "1" {print "1"; exit}'
 }
 
 ## 修复丢失的配置参数函数
@@ -158,8 +192,18 @@ lz_init_cfg_data() {
 ## 返回值：无
 lz_fix_lost_data() {
     eval "$( eval "$( echo "${param_list}" | sed -n "/^all_foreign_wan_port$/,/^custom_dualwan_scripts_filename$/{
-            s/^[[:alnum:]_][[:alnum:]_]*$/echo \"& \${local_&_flag}\"/;p}" )" \
-        | awk '$2 != "1" {x++; print "local_"$1"=\"\${local_ini_"$1"}\"";}' )"
+            s/^[[:alnum:]_]\+$/echo \"& \${local_&_flag}\"/;p}" )" \
+        | awk '$2 != "1" {print "local_"$1"=\"\${local_ini_"$1"}\"";}' )"
+}
+
+## 获取备份配置参数状态函数
+## 输入项：
+##     全局变量
+## 返回值：
+##     1--不完整
+lz_get_ini_data_status() {
+    eval "$( echo "${param_list}" | sed "s/^[[:alnum:]_]\+$/echo \"& \${local_ini_&_flag}\"/" )" \
+        | awk '$2 != "1" {print "1"; exit}'
 }
 
 ## 复原配置文件函数
@@ -179,18 +223,26 @@ lz_restore_cfg_file() {
 #BEIGIN
 
 ## 技巧：
-##       上传编辑好的firewall-start文件和本代码至路由器后，开关防火墙即可启动本代码，不必重启路由器。
-##       也可通过SSH命令行窗口直接输入如下命令：
-##       启动/重启        ${PATH_LZ}/lz_rule.sh
-##       暂停运行         ${PATH_LZ}/lz_rule.sh stop
-##       终止运行         ${PATH_LZ}/lz_rule.sh STOP
-##       恢复缺省配置     ${PATH_LZ}/lz_rule.sh default
-##       动态分流模式配置 ${PATH_LZ}/lz_rule.sh rn
-##       静态分流模式配置 ${PATH_LZ}/lz_rule.sh hd
-##       IPTV模式配置     ${PATH_LZ}/lz_rule.sh iptv
-##       运行状态查询     ${PATH_LZ}/lz_rule.sh status
-##       网址信息查询     ${PATH_LZ}/lz_rule.sh address 网址 [第三方DNS服务器IP地址（可选项）]
-##       解除运行锁       ${PATH_LZ}/lz_rule.sh unlock
+##       上传编辑好的 firewall-start 文件和本代码至路由器后，开关防火墙即可启动本代码，不必重启路由器。
+##       也可通过 SSH 命令行窗口直接输入如下命令：
+##       启动/重启                  ${PATH_LZ}/lz_rule.sh
+##       暂停运行                   ${PATH_LZ}/lz_rule.sh stop
+##       终止运行                   ${PATH_LZ}/lz_rule.sh STOP
+##       恢复缺省配置               ${PATH_LZ}/lz_rule.sh default
+##       动态分流模式配置           ${PATH_LZ}/lz_rule.sh rn
+##       静态分流模式配置           ${PATH_LZ}/lz_rule.sh hd
+##       IPTV 模式配置              ${PATH_LZ}/lz_rule.sh iptv
+##       显示运行状态               ${PATH_LZ}/lz_rule.sh status
+##       网址信息查询               ${PATH_LZ}/lz_rule.sh address 网址 [第三方 DNS 服务器 IP 地址（可选项）]
+##       解除运行锁                 ${PATH_LZ}/lz_rule.sh unlock
+##       卸载 WEB 窗口页面          ${PATH_LZ}/lz_rule.sh unwebui
+##       在线获取最新版本信息       ${PATH_LZ}/lz_rule.sh lastver
+##       在线安装软件最新版本       ${PATH_LZ}/lz_rule.sh upgrade
+##       在线更新 ISP 运营商数据    ${PATH_LZ}/lz_rule.sh isp
+##       关闭系统 ASD 进程          ${PATH_LZ}/lz_rule.sh fasd
+##       恢复系统 ASD 进程          ${PATH_LZ}/lz_rule.sh rasd
+##       显示命令列表               ${PATH_LZ}/lz_rule.sh cmd
+##       显示帮助                   ${PATH_LZ}/lz_rule.sh help
 ## 提示：
 ##     1."启动/重启"命令用于手工启动或重启脚本服务。
 ##     2."暂停运行"命令仅是暂时关闭策略路由服务，重启路由器、线路接入或断开、WAN口IP改变、防火墙开关等
@@ -260,7 +312,7 @@ lz_restore_cfg_file() {
 ##     8.未启用外置脚本功能。
 ##     如有不同需求，请在自定义区修改下面的参数配置。
 
-## 策略规则优先级执行顺序：由高到低排列，系统抢先执行高优先级策略。
+## 策略路由优先级顺序：序号 1 为最高优先级，网络流量优先匹配高优先级策略。
 ##     1.负载均衡
 ##     2.IPTV 机顶盒
 ##     3.代理转发静态直通策略
@@ -406,6 +458,8 @@ ruid_retry_num=${local_ruid_retry_num}
 
 ## 二、高级设置
 
+## 本部分所有策略从上至下按「策略路由优先级顺序」由低到高排列，网络流量优先匹配高优先级策略。
+
 ## 用户自定义IPv4目标网址/网段(1)流量出口
 ## 0--第一WAN口；1--第二WAN口；2--自动分配出口；>2--禁用；取值范围：0~9
 ## 缺省为禁用（5）。
@@ -425,7 +479,7 @@ custom_data_wan_port_1=${local_custom_data_wan_port_1}
 ## 例如：
 ## 123.234.123.111
 ## 133.234.123.0/24
-## 此文件中0.0.0.0/0和0.0.0.0为无效地址。
+## 此文件中0.0.0.0/0、0.0.0.0和路由器本地IP地址为无效地址。
 ## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
 custom_data_file_1=${local_custom_data_file_1}
 
@@ -445,216 +499,9 @@ custom_data_wan_port_2=${local_custom_data_wan_port_2}
 ## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
 ## 缺省为"${PATH_DATA}/custom_data_2.txt"，为空文件。
 ## 文本格式：一个网址/网段一行，为一个条目，可多行多个条目。
-## 此文件中0.0.0.0/0和0.0.0.0为无效地址。
+## 此文件中0.0.0.0/0、0.0.0.0和路由器本地IP地址为无效地址。
 ## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
 custom_data_file_2=${local_custom_data_file_2}
-
-## 第一WAN口域名地址IPv4流量动态分流
-## 0--启用；非0--禁用；取值范围：0~9
-## 缺省为禁用（5）。
-## 指定客户端条目列表中所有设备访问预设域名地址的IPv4流量使用第一WAN口作为出口。
-## 仅对以DHCP方式自动连接路由器，或DNS指向路由器主机本地地址的客户端内的网络流量有效。
-## 若客户端内软件使用其他 DNS 服务器解析网络访问地址，则本功能无效。
-## 功能优先级高于“客户端IPv4流量静态直通路由”，低于“客户端至预设IPv4目标网址/网段流量协议端口动态路由”、“高优
-## 先级客户端IPv4流量静态直通路由”和“客户端至预设IPv4目标网址/网段流量静态直通路由”，详情见前述“策略规则优先级
-## 执行顺序”。
-wan_1_domain=${local_wan_1_domain}
-
-## 第一WAN口域名地址动态分流客户端IPv4网址/网段条目列表数据文件
-## 文件中具体定义所有使用第一WAN口域名地址IPv4流量动态分流的客户端在本地网络中的IPv4网址/网段。
-## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
-## 缺省为"${PATH_DATA}/wan_1_domain_client_src_addr.txt"，为空文件。
-## 文本格式：一个网址/网段一行，为一个条目，可多行多个条目。
-## 例如：
-## 192.168.50.111
-## 10.0.0.0/28
-## 可以用0.0.0.0/0表示所有客户端。
-## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
-wan_1_domain_client_src_addr_file=${local_wan_1_domain_client_src_addr_file}
-
-## 第一WAN口域名地址条目列表数据文件
-## 文件中具体定义所有使用第一WAN口作为IPv4流量出口的预设域名地址。
-## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
-## 缺省为"${PATH_DATA}/wan_1_domain.txt"，为空文件。
-## 文本格式：一个域名地址一行，为一个条目，可多行多个条目。
-## 例如：
-## abc.def.com.cn
-## www.qq.com
-## 域名地址条目中不能有网络协议前缀（如 http://、https:// 或 ftp://等）、端口号（如:23456）、路径及文件名、
-## 特殊符号等影响地址解析的内容。
-## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
-wan_1_domain_file=${local_wan_1_domain_file}
-
-## 第二WAN口域名地址IPv4流量动态分流
-## 0--启用；非0--禁用；取值范围：0~9
-## 缺省为禁用（5）。
-## 指定客户端条目列表中所有设备访问预设域名地址的IPv4流量使用第二WAN口作为出口。
-## 仅对以DHCP方式自动连接路由器，或DNS指向路由器主机本地地址的客户端内的网络流量有效。
-## 若客户端内软件使用其他 DNS 服务器解析网络访问地址，则本功能无效。
-## 功能优先级高于“客户端IPv4流量静态直通路由”，低于“客户端至预设IPv4目标网址/网段流量协议端口动态路由”、“高优
-## 先级客户端IPv4流量静态直通路由”和“客户端至预设IPv4目标网址/网段流量静态直通路由”，详情见前述“策略规则优先级
-## 执行顺序”。
-wan_2_domain=${local_wan_2_domain}
-
-## 第二WAN口域名地址动态分流客户端IPv4网址/网段条目列表数据文件
-## 文件中具体定义所有使用第二WAN口域名地址IPv4流量动态分流的客户端在本地网络中的IPv4网址/网段。
-## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
-## 缺省为"${PATH_DATA}/wan_2_domain_client_src_addr.txt"，为空文件。
-## 文本格式：一个网址/网段一行，为一个条目，可多行多个条目。
-## 可以用0.0.0.0/0表示所有客户端。
-## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
-wan_2_domain_client_src_addr_file=${local_wan_2_domain_client_src_addr_file}
-
-## 第二WAN口域名地址条目列表数据文件
-## 文件中具体定义所有使用第二WAN口作为IPv4流量出口的预设域名地址。
-## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
-## 缺省为"${PATH_DATA}/wan_2_domain.txt"，为空文件。
-## 文本格式：一个域名地址一行，为一个条目，可多行多个条目。
-## 域名地址条目中不能有网络协议前缀（如 http://、https:// 或 ftp://等）、端口号（如:23456）、路径及文件名、
-## 特殊符号等影响地址解析的内容。
-## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
-wan_2_domain_file=${local_wan_2_domain_file}
-
-## 域名解析后域名动态分流用IPv4地址缓存时间
-## 0--永久；1~2147483--时间间隔，以秒为单位；取值范围：0~2147483
-## 缺省为10天（864000）。
-## 若设置时间间隔，软件重启后，时间会重新计数。
-dn_cache_time=${local_dn_cache_time}
-
-## 第一WAN口客户端IPv4流量静态直通路由
-## 0--启用；非0--禁用；取值范围：0~9
-## 缺省为禁用（5）。
-## 指定客户端使用第一WAN口作为IPv4流量出口。
-wan_1_client_src_addr=${local_wan_1_client_src_addr}
-
-## 第一WAN口客户端IPv4网址/网段条目列表数据文件
-## 文件中具体定义使用第一WAN口作为IPv4流量出口的客户端在本地网络中的IPv4网址/网段。
-## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
-## 缺省为"${PATH_DATA}/wan_1_client_src_addr.txt"，为空文件。
-## 文本格式：一个网址/网段一行，为一个条目，可多行多个条目。
-## 例如：
-## 192.168.50.111
-## 10.0.0.0/28
-## 可以用0.0.0.0/0表示所有客户端。
-## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
-wan_1_client_src_addr_file=${local_wan_1_client_src_addr_file}
-
-## 第二WAN口客户端IPv4流量静态直通路由
-## 0--启用；非0--禁用；取值范围：0~9
-## 缺省为禁用（5）。
-## 指定客户端使用第二WAN口作为IPv4流量出口。
-wan_2_client_src_addr=${local_wan_2_client_src_addr}
-
-## 第二WAN口客户端IPv4网址/网段条目列表数据文件
-## 文件中具体定义使用第二WAN口作为IPv4流量出口的客户端在本地网络中的IPv4网址/网段。
-## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
-## 缺省为"${PATH_DATA}/wan_2_client_src_addr.txt"，为空文件。
-## 文本格式：一个网址/网段一行，为一个条目，可多行多个条目。
-## 可以用0.0.0.0/0表示所有客户端。
-## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
-wan_2_client_src_addr_file=${local_wan_2_client_src_addr_file}
-
-## 第一WAN口高优先级客户端IPv4流量静态直通路由
-## 0--启用；非0--禁用；取值范围：0~9
-## 缺省为禁用（5）。
-## 指定客户端使用第一WAN口作为IPv4流量出口。
-high_wan_1_client_src_addr=${local_high_wan_1_client_src_addr}
-
-## 第一WAN口高优先级客户端IPv4网址/网段条目列表数据文件
-## 文件中具体定义使用第一WAN口作为IPv4流量出口的高优先级客户端在本地网络中的IPv4网址/网段。
-## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
-## 缺省为"${PATH_DATA}/high_wan_1_client_src_addr.txt"，为空文件。
-## 文本格式：一个网址/网段一行，为一个条目，可多行多个条目。
-## 可以用0.0.0.0/0表示所有客户端。
-## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
-high_wan_1_client_src_addr_file=${local_high_wan_1_client_src_addr_file}
-
-## 第二WAN口高优先级客户端IPv4流量静态直通路由
-## 0--启用；非0--禁用；取值范围：0~9
-## 缺省为禁用（5）。
-## 指定客户端使用第二WAN口作为IPv4流量出口。
-high_wan_2_client_src_addr=${local_high_wan_2_client_src_addr}
-
-## 第二WAN口高优先级客户端IPv4网址/网段条目列表数据文件
-## 文件中具体定义使用第二WAN口作为IPv4流量出口的高优先级客户端在本地网络中的IPv4网址/网段。
-## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
-## 缺省为"${PATH_DATA}/high_wan_2_client_src_addr.txt"，为空文件。
-## 文本格式：一个网址/网段一行，为一个条目，可多行多个条目。
-## 可以用0.0.0.0/0表示所有客户端。
-## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
-high_wan_2_client_src_addr_file=${local_high_wan_2_client_src_addr_file}
-
-## 第一WAN口客户端至预设IPv4目标网址/网段流量静态直通路由
-## 0--启用；非0--禁用；取值范围：0~9
-## 缺省为禁用（5）。
-## 指定客户端访问预设IPv4网址/网段时使用第一WAN口作为该IPv4流量出口。
-wan_1_src_to_dst_addr=${local_wan_1_src_to_dst_addr}
-
-## 第一WAN口客户端IPv4网址/网段至预设IPv4目标网址/网段条目列表数据文件
-## 文件中具体定义客户端访问预设IPv4网址/网段时使用第一WAN口作为该IPv4流量出口。
-## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
-## 缺省为"${PATH_DATA}/wan_1_src_to_dst_addr.txt"，为空文件。
-## 文本格式：每行的源网址/网段和目标网址/网段之间按顺序用空格隔开，一个条目一行，可多行多个条目。
-## 例如：
-## 192.168.50.101 103.10.4.108
-## 可以用0.0.0.0/0表示所有未知IP地址。
-## NAS设备远程访问接入示例：
-## 假设NAS设备本地地址为 192.168.50.123，通过本WAN口远程访问，需填写如下两个条目：
-## 192.168.50.123 0.0.0.0/0
-## 0.0.0.0/0 192.168.50.123
-## 若有多个NAS设备通过本WAN口远程访问，可按地址依次填写条目对。
-## NAS设备远程访问接入时要求“外网访问路由器主机入口”和路由器系统的DDNS出口必须也设置为本WAN口。
-## 建议列表条目数量不要多于512条，否则易导致脚本启动时系统策略路由库加载数据时间过长。
-## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
-wan_1_src_to_dst_addr_file=${local_wan_1_src_to_dst_addr_file}
-
-## 第二WAN口客户端至预设IPv4目标网址/网段流量静态直通路由
-## 0--启用；非0--禁用；取值范围：0~9
-## 缺省为禁用（5）。
-## 指定客户端访问预设IPv4网址/网段时使用第二WAN口作为该IPv4流量出口。
-wan_2_src_to_dst_addr=${local_wan_2_src_to_dst_addr}
-
-## 第二WAN口客户端IPv4网址/网段至预设IPv4目标网址/网段条目列表数据文件
-## 文件中具体定义客户端访问预设IPv4网址/网段时使用第二WAN口作为该IPv4流量出口。
-## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
-## 缺省为"${PATH_DATA}/wan_2_src_to_dst_addr.txt"，为空文件。
-## 文本格式：每行的源网址/网段和目标网址/网段之间按顺序用空格隔开，一个条目一行，可多行多个条目。
-## 例如：
-## 192.168.50.102 210.74.192.0/18
-## 可以用0.0.0.0/0表示所有未知IP地址。
-## NAS设备远程访问接入示例：
-## 假设NAS设备本地地址为 192.168.50.123，通过本WAN口远程访问，需填写如下两个条目：
-## 192.168.50.123 0.0.0.0/0
-## 0.0.0.0/0 192.168.50.123
-## 若有多个NAS设备通过本WAN口远程访问，可按地址依次填写条目对。
-## NAS设备远程访问接入时要求“外网访问路由器主机入口”和路由器系统的DDNS出口必须也设置为本WAN口。
-## 建议列表条目数量不要多于512条，否则易导致脚本启动时系统策略路由库加载数据时间过长。
-## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
-wan_2_src_to_dst_addr_file=${local_wan_2_src_to_dst_addr_file}
-
-## 第一WAN口高优先级客户端至预设IPv4目标网址/网段流量静态直通路由
-## 0--启用；非0--禁用；取值范围：0~9
-## 缺省为禁用（5）。
-## 指定高优先级客户端访问预设IPv4网址/网段时使用第一WAN口作为该IPv4流量出口。
-high_wan_1_src_to_dst_addr=${local_high_wan_1_src_to_dst_addr}
-
-## 第一WAN口高优先级客户端IPv4网址/网段至预设IPv4目标网址/网段条目列表数据文件
-## 文件中具体定义高优先级客户端访问预设IPv4网址/网段时使用第一WAN口作为该IPv4流量出口。
-## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
-## 缺省为"${PATH_DATA}/high_wan_1_src_to_dst_addr.txt"，为空文件。
-## 文本格式：每行的源网址/网段和目标网址/网段之间按顺序用空格隔开，一个条目一行，可多行多个条目。
-## 例如：
-## 192.168.50.0/27 0.0.0.0/0
-## 可以用0.0.0.0/0表示所有未知IP地址。
-## NAS设备远程访问接入示例：
-## 假设NAS设备本地地址为 192.168.50.123，通过本WAN口远程访问，需填写如下两个条目：
-## 192.168.50.123 0.0.0.0/0
-## 0.0.0.0/0 192.168.50.123
-## 若有多个NAS设备通过本WAN口远程访问，可按地址依次填写条目对。
-## NAS设备远程访问接入时要求“外网访问路由器主机入口”和路由器系统的DDNS出口必须也设置为本WAN口。
-## 建议列表条目数量不要多于512条，否则易导致脚本启动时系统策略路由库加载数据时间过长。
-## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
-high_wan_1_src_to_dst_addr_file=${local_high_wan_1_src_to_dst_addr_file}
 
 ## 第一WAN口IPv4流量协议端口动态分流
 ## 本功能仅对路由器下属客户端设备访问外部网络的数据流量有效。
@@ -680,6 +527,125 @@ wan1_dest_udp_port=${local_wan1_dest_udp_port}
 wan1_dest_udplite_port=${local_wan1_dest_udplite_port}
 wan1_dest_sctp_port=${local_wan1_dest_sctp_port}
 
+## 第一WAN口客户端IPv4流量静态直通路由
+## 0--启用；非0--禁用；取值范围：0~9
+## 缺省为禁用（5）。
+## 指定客户端使用第一WAN口作为IPv4流量出口。
+wan_1_client_src_addr=${local_wan_1_client_src_addr}
+
+## 第一WAN口客户端IPv4网址/网段条目列表数据文件
+## 文件中具体定义使用第一WAN口作为IPv4流量出口的客户端在本地网络中的IPv4网址/网段。
+## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
+## 缺省为"${PATH_DATA}/wan_1_client_src_addr.txt"，为空文件。
+## 文本格式：一个网址/网段一行，为一个条目，可多行多个条目。
+## 例如：
+## 192.168.50.111
+## 10.0.0.0/28
+## 可以用0.0.0.0/0表示所有客户端，0.0.0.0和路由器本地IP地址为无效地址。
+## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
+wan_1_client_src_addr_file=${local_wan_1_client_src_addr_file}
+
+## 第二WAN口客户端IPv4流量静态直通路由
+## 0--启用；非0--禁用；取值范围：0~9
+## 缺省为禁用（5）。
+## 指定客户端使用第二WAN口作为IPv4流量出口。
+wan_2_client_src_addr=${local_wan_2_client_src_addr}
+
+## 第二WAN口客户端IPv4网址/网段条目列表数据文件
+## 文件中具体定义使用第二WAN口作为IPv4流量出口的客户端在本地网络中的IPv4网址/网段。
+## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
+## 缺省为"${PATH_DATA}/wan_2_client_src_addr.txt"，为空文件。
+## 文本格式：一个网址/网段一行，为一个条目，可多行多个条目。
+## 可以用0.0.0.0/0表示所有客户端，0.0.0.0和路由器本地IP地址为无效地址。
+## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
+wan_2_client_src_addr_file=${local_wan_2_client_src_addr_file}
+
+## 第一WAN口域名地址IPv4流量动态分流
+## 0--启用；非0--禁用；取值范围：0~9
+## 缺省为禁用（5）。
+## 指定客户端条目列表中所有设备访问预设域名地址的IPv4流量使用第一WAN口作为出口。
+## 仅对以DHCP方式自动连接路由器，或DNS指向路由器主机本地地址的客户端内的网络流量有效。
+## 若客户端内软件使用其他 DNS 服务器解析网络访问地址，则本功能无效。
+## 功能优先级高于“客户端IPv4流量静态直通路由”，低于“客户端至预设IPv4目标网址/网段流量协议端口动态路由”、“高优
+## 先级客户端IPv4流量静态直通路由”和“客户端至预设IPv4目标网址/网段流量静态直通路由”，详情见前述“策略规则优先级
+## 执行顺序”。
+wan_1_domain=${local_wan_1_domain}
+
+## 第一WAN口域名地址动态分流客户端IPv4网址/网段条目列表数据文件
+## 文件中具体定义所有使用第一WAN口域名地址IPv4流量动态分流的客户端在本地网络中的IPv4网址/网段。
+## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
+## 缺省为"${PATH_DATA}/wan_1_domain_client_src_addr.txt"，为空文件。
+## 文本格式：一个网址/网段一行，为一个条目，可多行多个条目。
+## 例如：
+## 192.168.50.111
+## 10.0.0.0/28
+## 可以用0.0.0.0/0表示所有客户端，0.0.0.0和路由器本地IP地址为无效地址。
+## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
+wan_1_domain_client_src_addr_file=${local_wan_1_domain_client_src_addr_file}
+
+## 第一WAN口域名地址条目列表数据文件
+## 文件中具体定义所有使用第一WAN口作为IPv4流量出口的预设域名地址。
+## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
+## 缺省为"${PATH_DATA}/wan_1_domain.txt"，为空文件。
+## 文本格式：一个域名地址一行，为一个条目，可多行多个条目。
+## 例如：
+## abc.def.com.cn
+## www.qq.com
+## 本域名地址列表仅支持英文域名地址。
+## 一个域名地址条目由多个不同级别的域名连接而成，之间用点号 (.) 相隔，级别最低的在最左边，最高的在最右边。
+## 构成域名的字符只能使用英文字母 (a~z，不区分大小写)、数字 (0~9) 以及连接符 (-)。连接符 (-) 不能连续出现，
+## 也不能放在域名的开头或结尾。每一级域名不超过 63 个字符，完整域名 (域名地址) 总共不超过 255 个字符。
+## 域名地址条目中不能有网络协议前缀（如 http://、https:// 或 ftp://等）、端口号（如:23456）、路径及文件名、
+## 特殊符号等影响地址解析的内容。
+## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
+wan_1_domain_file=${local_wan_1_domain_file}
+
+## 第二WAN口域名地址IPv4流量动态分流
+## 0--启用；非0--禁用；取值范围：0~9
+## 缺省为禁用（5）。
+## 指定客户端条目列表中所有设备访问预设域名地址的IPv4流量使用第二WAN口作为出口。
+## 仅对以DHCP方式自动连接路由器，或DNS指向路由器主机本地地址的客户端内的网络流量有效。
+## 若客户端内软件使用其他 DNS 服务器解析网络访问地址，则本功能无效。
+## 功能优先级高于“客户端IPv4流量静态直通路由”，低于“客户端至预设IPv4目标网址/网段流量协议端口动态路由”、“高优
+## 先级客户端IPv4流量静态直通路由”和“客户端至预设IPv4目标网址/网段流量静态直通路由”，详情见前述“策略规则优先级
+## 执行顺序”。
+wan_2_domain=${local_wan_2_domain}
+
+## 第二WAN口域名地址动态分流客户端IPv4网址/网段条目列表数据文件
+## 文件中具体定义所有使用第二WAN口域名地址IPv4流量动态分流的客户端在本地网络中的IPv4网址/网段。
+## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
+## 缺省为"${PATH_DATA}/wan_2_domain_client_src_addr.txt"，为空文件。
+## 文本格式：一个网址/网段一行，为一个条目，可多行多个条目。
+## 例如：
+## 192.168.50.111
+## 192.168.60.0/28
+## 可以用0.0.0.0/0表示所有客户端，0.0.0.0和路由器本地IP地址为无效地址。
+## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
+wan_2_domain_client_src_addr_file=${local_wan_2_domain_client_src_addr_file}
+
+## 第二WAN口域名地址条目列表数据文件
+## 文件中具体定义所有使用第二WAN口作为IPv4流量出口的预设域名地址。
+## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
+## 缺省为"${PATH_DATA}/wan_2_domain.txt"，为空文件。
+## 文本格式：一个域名地址一行，为一个条目，可多行多个条目。
+## 例如：
+## abc.def.com.cn
+## www.qq.com
+## 本域名地址列表仅支持英文域名地址。
+## 一个域名地址条目由多个不同级别的域名连接而成，之间用点号 (.) 相隔，级别最低的在最左边，最高的在最右边。
+## 构成域名的字符只能使用英文字母 (a~z，不区分大小写)、数字 (0~9) 以及连接符 (-)。连接符 (-) 不能连续出现，
+## 也不能放在域名的开头或结尾。每一级域名不超过 63 个字符，完整域名 (域名地址) 总共不超过 255 个字符。
+## 域名地址条目中不能有网络协议前缀（如 http://、https:// 或 ftp://等）、端口号（如:23456）、路径及文件名、
+## 特殊符号等影响地址解析的内容。
+## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
+wan_2_domain_file=${local_wan_2_domain_file}
+
+## 域名解析后域名动态分流用IPv4地址缓存时间
+## 0--永久；1~2147483--时间间隔，以秒为单位；取值范围：0~2147483
+## 缺省为10天（864000）。
+## 若设置时间间隔，软件重启后，时间会重新计数。
+dn_cache_time=${local_dn_cache_time}
+
 ## 第一WAN口客户端至预设IPv4目标网址/网段流量协议端口动态分流
 ## 0--启用；非0--禁用；取值范围：0~9
 ## 缺省为禁用（5）。
@@ -695,19 +661,38 @@ wan_1_src_to_dst_addr_port=${local_wan_1_src_to_dst_addr_port}
 ## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
 ## 缺省为"${PATH_DATA}/wan_1_src_to_dst_addr_port.txt"，为空文件。
 ## 文本格式：每行各字段之间用空格隔开，一个条目一行，可多行多个条目。
+## 客户端IPv4网址/网段 IPv4目标网址/网段 通讯协议 客户端源端口号 目标端口号
 ## 客户端IPv4网址/网段 IPv4目标网址/网段 通讯协议 目标端口号
+## 客户端IPv4网址/网段 IPv4目标网址/网段 通讯协议
+## 客户端IPv4网址/网段 IPv4目标网址/网段
+## 客户端IPv4网址/网段
 ## 例如：
-## 192.168.50.101 123.123.123.121 tcp 80,443,6881:6889,25671
-## 192.168.50.0/27 123.123.123.0/24 udp 4334
-## 0.0.0.0/0 123.123.123.123 udplite 12345
-## 192.168.50.102 0.0.0.0/0 sctp
+## 192.168.50.101 123.123.123.121 tcp 80,443,6881:6889,25671 801,4431,16881:16889,225671
+## 192.168.50.102 123.123.123.122 udp any 8080
+## 192.168.50.103 123.123.123.123 tcp 8081 any
+## 192.168.50.104 123.123.123.124 udp 80,443,6881:6889,25671
+## 192.168.50.0/27 123.123.123.0/24 tcp 4334
+## 0.0.0.0/0 123.123.123.125 udplite 12345
+## 192.168.50.105 0.0.0.0/0 sctp
 ## 0.0.0.0/0 0.0.0.0/0
-## 可以用0.0.0.0/0表示所有未知IP地址。
-## “客户端IPv4网址/网段”和“IPv4目标网址/网段”为必选项。
-## “通讯协议”及“目标端口号”为可选项。选择“目标端口号”时，“通讯协议”则为必选项。
+## 192.168.50.106
+## 可以用0.0.0.0/0表示所有未知IP地址，0.0.0.0和路由器本地IP地址为无效地址，any表示任意未知端口号。
+## “客户端IPv4网址/网段”必选项。
+## “IPv4目标网址/网段”、“通讯协议”、“客户端源端口号”及“目标端口号”为可选项。
+## 填写“通讯协议”时，“IPv4目标网址/网段”则成为必选项，后续依此类推。
 ## 每个条目只能使用一个端口通讯协议，只能是TCP、UDP、UDPLITE、SCTP四种协议中的一个，字母英文大小写均可。
 ## 连续端口号中间用英文半角“:”冒号相隔，如：6881:6889表示6881~6889的连续端口号。
 ## 每个条目最多可设置15个不连续的目标访问端口号埠，不连续的端口号埠之间用英文半角“,”逗号相隔，不要有空格。
+## 等效设置一，例如：
+## 192.168.50.12 123.123.123.151 tcp any 80,443,6881:6889,25671
+## 192.168.50.12 123.123.123.151 tcp 80,443,6881:6889,25671
+## 等效设置二，例如：
+## 192.168.50.12 123.123.123.151 tcp any any
+## 192.168.50.12 123.123.123.151 tcp any
+## 192.168.50.12 123.123.123.151 tcp
+## 等效设置三，例如：
+## 192.168.50.12 0.0.0.0/0
+## 192.168.50.12
 ## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
 wan_1_src_to_dst_addr_port_file=${local_wan_1_src_to_dst_addr_port_file}
 
@@ -726,19 +711,38 @@ wan_2_src_to_dst_addr_port=${local_wan_2_src_to_dst_addr_port}
 ## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
 ## 缺省为"${PATH_DATA}/wan_2_src_to_dst_addr_port.txt"，为空文件。
 ## 文本格式：每行各字段之间用空格隔开，一个条目一行，可多行多个条目。
+## 客户端IPv4网址/网段 IPv4目标网址/网段 通讯协议 客户端源端口号 目标端口号
 ## 客户端IPv4网址/网段 IPv4目标网址/网段 通讯协议 目标端口号
+## 客户端IPv4网址/网段 IPv4目标网址/网段 通讯协议
+## 客户端IPv4网址/网段 IPv4目标网址/网段
+## 客户端IPv4网址/网段
 ## 例如：
-## 192.168.50.101 123.123.123.121 tcp 80,443,6881:6889,25671
-## 192.168.50.0/27 123.123.123.0/24 udp 4334
-## 0.0.0.0/0 123.123.123.123 udplite 12345
-## 192.168.50.102 0.0.0.0/0 sctp
+## 192.168.50.101 123.123.123.121 tcp 80,443,6881:6889,25671 801,4431,16881:16889,225671
+## 192.168.50.102 123.123.123.122 udp any 8080
+## 192.168.50.103 123.123.123.123 tcp 8081 any
+## 192.168.50.104 123.123.123.124 udp 80,443,6881:6889,25671
+## 192.168.50.0/27 123.123.123.0/24 tcp 4334
+## 0.0.0.0/0 123.123.123.125 udplite 12345
+## 192.168.50.105 0.0.0.0/0 sctp
 ## 0.0.0.0/0 0.0.0.0/0
-## 可以用0.0.0.0/0表示所有未知IP地址。
-## “客户端IPv4网址/网段”和“IPv4目标网址/网段”为必选项。
-## “通讯协议”及“目标端口号”为可选项。选择“目标端口号”时，“通讯协议”则为必选项。
+## 192.168.50.106
+## 可以用0.0.0.0/0表示所有未知IP地址，0.0.0.0和路由器本地IP地址为无效地址，any表示任意未知端口号。
+## “客户端IPv4网址/网段”必选项。
+## “IPv4目标网址/网段”、“通讯协议”、“客户端源端口号”及“目标端口号”为可选项。
+## 填写“通讯协议”时，“IPv4目标网址/网段”则成为必选项，后续依此类推。
 ## 每个条目只能使用一个端口通讯协议，只能是TCP、UDP、UDPLITE、SCTP四种协议中的一个，字母英文大小写均可。
 ## 连续端口号中间用英文半角“:”冒号相隔，如：6881:6889表示6881~6889的连续端口号。
 ## 每个条目最多可设置15个不连续的目标访问端口号埠，不连续的端口号埠之间用英文半角“,”逗号相隔，不要有空格。
+## 等效设置一，例如：
+## 192.168.50.12 123.123.123.151 tcp any 80,443,6881:6889,25671
+## 192.168.50.12 123.123.123.151 tcp 80,443,6881:6889,25671
+## 等效设置二，例如：
+## 192.168.50.12 123.123.123.151 tcp any any
+## 192.168.50.12 123.123.123.151 tcp any
+## 192.168.50.12 123.123.123.151 tcp
+## 等效设置三，例如：
+## 192.168.50.12 0.0.0.0/0
+## 192.168.50.12
 ## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
 wan_2_src_to_dst_addr_port_file=${local_wan_2_src_to_dst_addr_port_file}
 
@@ -757,40 +761,142 @@ high_wan_1_src_to_dst_addr_port=${local_high_wan_1_src_to_dst_addr_port}
 ## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
 ## 缺省为"${PATH_DATA}/high_wan_1_src_to_dst_addr_port.txt"，为空文件。
 ## 文本格式：每行各字段之间用空格隔开，一个条目一行，可多行多个条目。
+## 客户端IPv4网址/网段 IPv4目标网址/网段 通讯协议 客户端源端口号 目标端口号
 ## 客户端IPv4网址/网段 IPv4目标网址/网段 通讯协议 目标端口号
+## 客户端IPv4网址/网段 IPv4目标网址/网段 通讯协议
+## 客户端IPv4网址/网段 IPv4目标网址/网段
+## 客户端IPv4网址/网段
 ## 例如：
-## 192.168.50.101 123.123.123.121 tcp 80,443,6881:6889,25671
-## 192.168.50.0/27 123.123.123.0/24 udp 4334
-## 0.0.0.0/0 123.123.123.123 udplite 12345
-## 192.168.50.102 0.0.0.0/0 sctp
+## 192.168.50.101 123.123.123.121 tcp 80,443,6881:6889,25671 801,4431,16881:16889,225671
+## 192.168.50.102 123.123.123.122 udp any 8080
+## 192.168.50.103 123.123.123.123 tcp 8081 any
+## 192.168.50.104 123.123.123.124 udp 80,443,6881:6889,25671
+## 192.168.50.0/27 123.123.123.0/24 tcp 4334
+## 0.0.0.0/0 123.123.123.125 udplite 12345
+## 192.168.50.105 0.0.0.0/0 sctp
 ## 0.0.0.0/0 0.0.0.0/0
-## 可以用0.0.0.0/0表示所有未知IP地址。
-## “客户端IPv4网址/网段”和“IPv4目标网址/网段”为必选项。
-## “通讯协议”及“目标端口号”为可选项。选择“目标端口号”时，“通讯协议”则为必选项。
+## 192.168.50.106
+## 可以用0.0.0.0/0表示所有未知IP地址，0.0.0.0和路由器本地IP地址为无效地址，any表示任意未知端口号。
+## “客户端IPv4网址/网段”必选项。
+## “IPv4目标网址/网段”、“通讯协议”、“客户端源端口号”及“目标端口号”为可选项。
+## 填写“通讯协议”时，“IPv4目标网址/网段”则成为必选项，后续依此类推。
 ## 每个条目只能使用一个端口通讯协议，只能是TCP、UDP、UDPLITE、SCTP四种协议中的一个，字母英文大小写均可。
 ## 连续端口号中间用英文半角“:”冒号相隔，如：6881:6889表示6881~6889的连续端口号。
 ## 每个条目最多可设置15个不连续的目标访问端口号埠，不连续的端口号埠之间用英文半角“,”逗号相隔，不要有空格。
+## 等效设置一，例如：
+## 192.168.50.12 123.123.123.151 tcp any 80,443,6881:6889,25671
+## 192.168.50.12 123.123.123.151 tcp 80,443,6881:6889,25671
+## 等效设置二，例如：
+## 192.168.50.12 123.123.123.151 tcp any any
+## 192.168.50.12 123.123.123.151 tcp any
+## 192.168.50.12 123.123.123.151 tcp
+## 等效设置三，例如：
+## 192.168.50.12 0.0.0.0/0
+## 192.168.50.12
 ## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
 high_wan_1_src_to_dst_addr_port_file=${local_high_wan_1_src_to_dst_addr_port_file}
 
-## 本地客户端IPv4网址/网段分流黑名单列表数据文件
-## 列入该网址/网段名单列表的设备访问外网时不受分流规则控制，仅由系统采用链路负载均衡技术在第一WAN口与第二
-## WAN口二者之中按流量比例随机分配链路流量出口，缺点是易导致网络访问不稳定和不正常。
-## 该功能可实现一些特殊用途的应用（如带速叠加下载，但外部影响因素较多，不保证此业务在所有情况下都能实现）。
-## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
-## 缺省为"${PATH_DATA}/local_ipsets_data.txt"，为空文件。
-## 文本格式：一个网址/网段一行，为一个条目，可多行多个条目。
-## 此文件中0.0.0.0/0和0.0.0.0为无效地址。
-## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
-local_ipsets_file=${local_local_ipsets_file}
+## 第一WAN口高优先级客户端IPv4流量静态直通路由
+## 0--启用；非0--禁用；取值范围：0~9
+## 缺省为禁用（5）。
+## 指定客户端使用第一WAN口作为IPv4流量出口。
+high_wan_1_client_src_addr=${local_high_wan_1_client_src_addr}
 
-## 外网访问路由器主机IPv4流量入口及路由器本机应用访问外网IPv4流量出口
-## 0--第一WAN口；1--第二WAN口；取值范围：0~1
-## 缺省为第一WAN口（0）。
-## 该网口用于从外网访问路由器及本地网络（应与DDNS出口保持一致），以及路由器本机内部应用访问外部网络，
-## 上述网络流量以静态直通方式共用同一个路由器外网网口。
-## 部分版本的固件系统，已在系统底层将路由器内置的DDNS绑定至第一WAN口，更改或可导致远程访问失败。
-wan_access_port=${local_wan_access_port}
+## 第一WAN口高优先级客户端IPv4网址/网段条目列表数据文件
+## 文件中具体定义使用第一WAN口作为IPv4流量出口的高优先级客户端在本地网络中的IPv4网址/网段。
+## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
+## 缺省为"${PATH_DATA}/high_wan_1_client_src_addr.txt"，为空文件。
+## 文本格式：一个网址/网段一行，为一个条目，可多行多个条目。
+## 可以用0.0.0.0/0表示所有客户端，0.0.0.0和路由器本地IP地址为无效地址。
+## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
+high_wan_1_client_src_addr_file=${local_high_wan_1_client_src_addr_file}
+
+## 第二WAN口高优先级客户端IPv4流量静态直通路由
+## 0--启用；非0--禁用；取值范围：0~9
+## 缺省为禁用（5）。
+## 指定客户端使用第二WAN口作为IPv4流量出口。
+high_wan_2_client_src_addr=${local_high_wan_2_client_src_addr}
+
+## 第二WAN口高优先级客户端IPv4网址/网段条目列表数据文件
+## 文件中具体定义使用第二WAN口作为IPv4流量出口的高优先级客户端在本地网络中的IPv4网址/网段。
+## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
+## 缺省为"${PATH_DATA}/high_wan_2_client_src_addr.txt"，为空文件。
+## 文本格式：一个网址/网段一行，为一个条目，可多行多个条目。
+## 可以用0.0.0.0/0表示所有客户端，0.0.0.0和路由器本地IP地址为无效地址。
+## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
+high_wan_2_client_src_addr_file=${local_high_wan_2_client_src_addr_file}
+
+## 第一WAN口客户端至预设IPv4目标网址/网段流量静态直通路由
+## 0--启用；非0--禁用；取值范围：0~9
+## 缺省为禁用（5）。
+## 指定客户端访问预设IPv4网址/网段时使用第一WAN口作为该IPv4流量出口。
+wan_1_src_to_dst_addr=${local_wan_1_src_to_dst_addr}
+
+## 第一WAN口客户端IPv4网址/网段至预设IPv4目标网址/网段条目列表数据文件
+## 文件中具体定义客户端访问预设IPv4网址/网段时使用第一WAN口作为该IPv4流量出口。
+## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
+## 缺省为"${PATH_DATA}/wan_1_src_to_dst_addr.txt"，为空文件。
+## 文本格式：每行的源网址/网段和目标网址/网段之间按顺序用空格隔开，一个条目一行，可多行多个条目。
+## 例如：
+## 192.168.50.101 103.10.4.108
+## 可以用0.0.0.0/0表示所有未知IP地址，0.0.0.0和路由器本地IP地址为无效地址。
+## NAS设备远程访问接入示例：
+## 假设NAS设备本地地址为 192.168.50.123，通过本WAN口远程访问，需填写如下两个条目：
+## 192.168.50.123 0.0.0.0/0
+## 0.0.0.0/0 192.168.50.123
+## 若有多个NAS设备通过本WAN口远程访问，可按地址依次填写条目对。
+## NAS设备远程访问接入时要求“外网访问路由器主机入口”和路由器系统的DDNS出口必须也设置为本WAN口。
+## 建议列表条目数量不要多于512条，否则易导致脚本启动时系统策略路由库加载数据时间过长。
+## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
+wan_1_src_to_dst_addr_file=${local_wan_1_src_to_dst_addr_file}
+
+## 第二WAN口客户端至预设IPv4目标网址/网段流量静态直通路由
+## 0--启用；非0--禁用；取值范围：0~9
+## 缺省为禁用（5）。
+## 指定客户端访问预设IPv4网址/网段时使用第二WAN口作为该IPv4流量出口。
+wan_2_src_to_dst_addr=${local_wan_2_src_to_dst_addr}
+
+## 第二WAN口客户端IPv4网址/网段至预设IPv4目标网址/网段条目列表数据文件
+## 文件中具体定义客户端访问预设IPv4网址/网段时使用第二WAN口作为该IPv4流量出口。
+## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
+## 缺省为"${PATH_DATA}/wan_2_src_to_dst_addr.txt"，为空文件。
+## 文本格式：每行的源网址/网段和目标网址/网段之间按顺序用空格隔开，一个条目一行，可多行多个条目。
+## 例如：
+## 192.168.50.102 210.74.192.0/18
+## 可以用0.0.0.0/0表示所有未知IP地址，0.0.0.0和路由器本地IP地址为无效地址。
+## NAS设备远程访问接入示例：
+## 假设NAS设备本地地址为 192.168.50.123，通过本WAN口远程访问，需填写如下两个条目：
+## 192.168.50.123 0.0.0.0/0
+## 0.0.0.0/0 192.168.50.123
+## 若有多个NAS设备通过本WAN口远程访问，可按地址依次填写条目对。
+## NAS设备远程访问接入时要求“外网访问路由器主机入口”和路由器系统的DDNS出口必须也设置为本WAN口。
+## 建议列表条目数量不要多于512条，否则易导致脚本启动时系统策略路由库加载数据时间过长。
+## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
+wan_2_src_to_dst_addr_file=${local_wan_2_src_to_dst_addr_file}
+
+## 第一WAN口高优先级客户端至预设IPv4目标网址/网段流量静态直通路由
+## 0--启用；非0--禁用；取值范围：0~9
+## 缺省为禁用（5）。
+## 指定高优先级客户端访问预设IPv4网址/网段时使用第一WAN口作为该IPv4流量出口。
+high_wan_1_src_to_dst_addr=${local_high_wan_1_src_to_dst_addr}
+
+## 第一WAN口高优先级客户端IPv4网址/网段至预设IPv4目标网址/网段条目列表数据文件
+## 文件中具体定义高优先级客户端访问预设IPv4网址/网段时使用第一WAN口作为该IPv4流量出口。
+## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
+## 缺省为"${PATH_DATA}/high_wan_1_src_to_dst_addr.txt"，为空文件。
+## 文本格式：每行的源网址/网段和目标网址/网段之间按顺序用空格隔开，一个条目一行，可多行多个条目。
+## 例如：
+## 192.168.50.0/27 0.0.0.0/0
+## 可以用0.0.0.0/0表示所有未知IP地址，0.0.0.0和路由器本地IP地址为无效地址。
+## NAS设备远程访问接入示例：
+## 假设NAS设备本地地址为 192.168.50.123，通过本WAN口远程访问，需填写如下两个条目：
+## 192.168.50.123 0.0.0.0/0
+## 0.0.0.0/0 192.168.50.123
+## 若有多个NAS设备通过本WAN口远程访问，可按地址依次填写条目对。
+## NAS设备远程访问接入时要求“外网访问路由器主机入口”和路由器系统的DDNS出口必须也设置为本WAN口。
+## 建议列表条目数量不要多于512条，否则易导致脚本启动时系统策略路由库加载数据时间过长。
+## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
+high_wan_1_src_to_dst_addr_file=${local_high_wan_1_src_to_dst_addr_file}
 
 ## 虚拟专网客户端访问外网IPv4流量路由器出口
 ## 0--第一WAN口；1--第二WAN口；>1--由现有策略分配出口；取值范围：0~9
@@ -813,6 +919,14 @@ ovs_client_wan_port=${local_ovs_client_wan_port}
 ## 用户可根据路由器CPU资源占用的实际测试结果合理调整该时间间隔。
 vpn_client_polling_time=${local_vpn_client_polling_time}
 
+## 外网访问路由器主机IPv4流量入口及路由器本机应用访问外网IPv4流量出口
+## 0--第一WAN口；1--第二WAN口；取值范围：0~1
+## 缺省为第一WAN口（0）。
+## 该网口用于从外网访问路由器及本地网络（应与DDNS出口保持一致），以及路由器本机内部应用访问外部网络，
+## 上述网络流量以静态直通方式共用同一个路由器外网网口。
+## 部分版本的固件系统，已在系统底层将路由器内置的DDNS绑定至第一WAN口，更改或可导致远程访问失败。
+wan_access_port=${local_wan_access_port}
+
 ## 代理转发远程连接IPv4流量静态直通路由
 ## 0--第一WAN口；1--第二WAN口；>1--禁用；取值范围：0~9
 ## 缺省为禁用（5）。
@@ -832,8 +946,8 @@ proxy_route=${local_proxy_route}
 ## 123.234.123.111
 ## 133.234.123.0/24
 ## abc.def.com.cn
-## 此文件中0.0.0.0/0和0.0.0.0为无效地址；条目中不能有网络协议前缀（如 http://、https:// 或 ftp://等）、
-## 端口号（如:23456）、路径及文件名、特殊符号等影响地址解析的内容。
+## 此文件中0.0.0.0/0、0.0.0.0和路由器本地IP地址为无效地址。地址条目中不能有网络协议前缀（如 http:// 或
+## https:// 或 ftp:// 等）、端口号（如:23456）、路径及文件名、特殊符号等影响地址解析的内容。
 ## 由于该地址列表仅用于静态直通路由，所有远程节点服务器地址应为静态地址。
 ## 当列表数据文件中包含域名格式地址时，需启用“代理转发远程节点服务器域名地址预解析”功能。若第三方传输代理
 ## 软件中使用有特定的DNS服务器，为避免DNS劫持和污染，可同时启用和设置“代理转发远程节点服务器自定义域名地
@@ -860,7 +974,20 @@ dn_pre_resolved=${local_dn_pre_resolved}
 ## 代理转发远程节点服务器自定义域名地址预解析DNS服务器
 ## 缺省自定义DNS为"8.8.8.8"。
 ## 用于设置路由器内第三方传输代理软件中使用的特定DNS服务器IPv4地址，可避免DNS劫持和污染。
+## 本地址也用于“三、运行设置”中“软件版本资源库位置”功能连接访问“国际（Github）”站点时解析域名地址。
 pre_dns=${local_pre_dns}
+
+## 本地客户端IPv4网址/网段分流黑名单列表数据文件
+## 列入该网址/网段名单列表的设备访问外网时不受分流规则控制，仅由系统采用链路负载均衡技术在第一WAN口与第二
+## WAN口二者之中按流量比例随机分配链路流量出口，缺点是易导致网络访问不稳定和不正常。
+## 该功能可实现一些特殊用途的应用（如带速叠加下载，但外部影响因素较多，不保证此业务在所有情况下都能实现）。
+## 文件路径、名称可自定义和修改，文件路径及名称不得为空。
+## 缺省为"${PATH_DATA}/local_ipsets_data.txt"，为空文件。
+## 文本格式：一个网址/网段一行，为一个条目，可多行多个条目。
+## 此文件中0.0.0.0/0、0.0.0.0和路由器本地IP地址为无效地址。
+## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
+local_ipsets_file=${local_local_ipsets_file}
+
 
 ## 三、运行设置
 
@@ -909,6 +1036,16 @@ custom_hosts=${local_custom_hosts}
 ## www.qq.com mydomain.alias
 ## 此文件中0.0.0.0为无效IP地址。
 custom_hosts_file=${local_custom_hosts_file}
+
+## 软件版本资源库位置
+## 0--中国大陆（Gitee）；1--国际（Github）；取值范围：0~1
+## 缺省使用中国大陆（Gitee）站点（0）。
+## 用于在线检测本软件最新版本，以及通过网络进行本软件的在线升级或重新安装。
+## 从中国大陆内地访问国际（Github）站点，线路通畅性可能不佳，若有受到干扰甚至屏蔽，或版本检测或在线安装功能
+## 无法正常使用时，请选择中国大陆（Gitee）站点。
+## 本软件连接访问国际（Github）站点时，为避免DNS劫持和污染，使用“二、高级设置”中“代理转发远程节点服务器自定
+## 义域名地址预解析DNS服务器”功能定义的DNS服务器地址实时解析域名地址。
+repo_site=${local_repo_site}
 
 ## 路由表缓存清理
 ## 0--启用；非0--禁用；取值范围：0~9
@@ -970,7 +1107,7 @@ iptv_access_mode=${local_iptv_access_mode}
 ## 192.168.50.46
 ## 192.168.50.86
 ## 192.168.50.101
-## 此文件中0.0.0.0/0和0.0.0.0为无效地址。
+## 此文件中0.0.0.0/0、0.0.0.0和路由器本地IP地址为无效地址。
 ## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
 iptv_box_ip_lst_file=${local_iptv_box_ip_lst_file}
 
@@ -981,7 +1118,7 @@ iptv_box_ip_lst_file=${local_iptv_box_ip_lst_file}
 ## 网络服务地址，需要用户自己获取和填写，如果地址不全或错误，机顶盒将无法通过路由器正确接入IPTV线路。若
 ## 填入的地址覆盖了用户使用的互联网访问地址，会导致机顶盒无法通过该地址访问互联网。
 ## 文本格式，一个IPv4网址/网段一行，可逐行填入多个网址/网段。
-## 此文件中0.0.0.0/0和0.0.0.0为无效地址。
+## 此文件中0.0.0.0/0、0.0.0.0和路由器本地IP地址为无效地址。
 ## 为避免脚本升级更新或重新安装导致配置重置为缺省状态，建议更改文件名或文件存储路径。
 iptv_isp_ip_lst_file=${local_iptv_isp_ip_lst_file}
 
@@ -1098,11 +1235,8 @@ EOF_CFG
 ##     全局常量及变量
 ## 返回值：无
 lz_get_config_data() {
-    local restore_cfg="0" original_length="-1" current_length="-1"
-    ini_param_default_list="$( eval "$( echo "${param_list}" \
-        | sed "s/^[[:alnum:]_][[:alnum:]_]*$/echo &=\"\${local_ini_&}\"/" )" \
-        | sed 's/\"//g' )"
-    eval "$( awk -F "=" -v param_default="${param_default_list}" -v ini_param_default="${ini_param_default_list}" -v dmq="${dnsmasq_enable}" -v fname="${PATH_CONFIGS}/lz_rule_config.sh" \
+    local restore_cfg="0" original_length="-1" current_length="-1" patt="^([\\\"]${REGEX_IPV4}[\\\"]|${REGEX_IPV4})$"
+    eval "$( awk -F "=" -v param_default="$( lz_get_param_default_list )" -v ini_param_default="$( lz_get_ini_param_default_list )" -v dmq="${dnsmasq_enable}" -v fname="${PATH_CONFIGS}/lz_rule_config.sh" \
         'BEGIN{
             x=0;
             count=0;
@@ -1111,6 +1245,7 @@ lz_get_config_data() {
             for (id in arr) {
                 pos=index(arr[id], "=");
                 i[substr(arr[id], 1, pos-1)]=substr(arr[id], pos+1);
+                iii[substr(arr[id], 1, pos-1)"_flag"]=0;
             }
             delete arr;
             split(ini_param_default, arr, "\n");
@@ -1121,186 +1256,250 @@ lz_get_config_data() {
             delete arr;
         } $0 ~ /^[[:space:]]*[[:alnum:]_]+[=]/ {
             flag=0;
+            key=$1;
+            gsub(/[[:space:]]/, "", key);
             value=$2;
             gsub(/[[:space:]#].*$/, "", value);
             invalid=0;
-            if ($1 == "all_foreign_wan_port" \
-                || $1 == "chinatelecom_wan_port" \
-                || $1 == "unicom_cnc_wan_port" \
-                || $1 == "cmcc_wan_port" \
-                || $1 == "crtc_wan_port" \
-                || $1 == "cernet_wan_port" \
-                || $1 == "gwbn_wan_port" \
-                || $1 == "othernet_wan_port" \
-                || $1 == "hk_wan_port" \
-                || $1 == "mo_wan_port" \
-                || $1 == "tw_wan_port" \
-                || $1 == "ovs_client_wan_port" \
-                || $1 == "dn_pre_resolved" \
-                || $1 == "route_cache" \
-                || $1 == "drop_sys_caches" \
-                || $1 == "regularly_update_ispip_data_enable" \
-                || $1 == "custom_data_wan_port_1" \
-                || $1 == "custom_data_wan_port_2" \
-                || $1 == "wan_1_client_src_addr" \
-                || $1 == "wan_2_client_src_addr" \
-                || $1 == "high_wan_1_client_src_addr" \
-                || $1 == "high_wan_2_client_src_addr" \
-                || $1 == "wan_1_src_to_dst_addr" \
-                || $1 == "wan_2_src_to_dst_addr" \
-                || $1 == "high_wan_1_src_to_dst_addr" \
-                || $1 == "wan_1_src_to_dst_addr_port" \
-                || $1 == "wan_2_src_to_dst_addr_port" \
-                || $1 == "high_wan_1_src_to_dst_addr_port" \
-                || $1 == "proxy_route" \
-                || $1 == "custom_hosts" \
-                || $1 == "wan1_iptv_mode" \
-                || $1 == "wan2_iptv_mode" \
-                || $1 == "iptv_igmp_switch" \
-                || $1 == "wan1_udpxy_switch" \
-                || $1 == "wan2_udpxy_switch" \
-                || $1 == "custom_clear_scripts" \
-                || $1 == "custom_config_scripts" \
-                || $1 == "custom_dualwan_scripts") {
+            if (key == "all_foreign_wan_port" \
+                || key == "chinatelecom_wan_port" \
+                || key == "unicom_cnc_wan_port" \
+                || key == "cmcc_wan_port" \
+                || key == "crtc_wan_port" \
+                || key == "cernet_wan_port" \
+                || key == "gwbn_wan_port" \
+                || key == "othernet_wan_port" \
+                || key == "hk_wan_port" \
+                || key == "mo_wan_port" \
+                || key == "tw_wan_port" \
+                || key == "ovs_client_wan_port" \
+                || key == "dn_pre_resolved" \
+                || key == "route_cache" \
+                || key == "drop_sys_caches" \
+                || key == "regularly_update_ispip_data_enable" \
+                || key == "custom_data_wan_port_1" \
+                || key == "custom_data_wan_port_2" \
+                || key == "wan_1_client_src_addr" \
+                || key == "wan_2_client_src_addr" \
+                || key == "high_wan_1_client_src_addr" \
+                || key == "high_wan_2_client_src_addr" \
+                || key == "wan_1_src_to_dst_addr" \
+                || key == "wan_2_src_to_dst_addr" \
+                || key == "high_wan_1_src_to_dst_addr" \
+                || key == "wan_1_src_to_dst_addr_port" \
+                || key == "wan_2_src_to_dst_addr_port" \
+                || key == "high_wan_1_src_to_dst_addr_port" \
+                || key == "proxy_route" \
+                || key == "custom_hosts" \
+                || key == "wan1_iptv_mode" \
+                || key == "wan2_iptv_mode" \
+                || key == "iptv_igmp_switch" \
+                || key == "wan1_udpxy_switch" \
+                || key == "wan2_udpxy_switch" \
+                || key == "custom_clear_scripts" \
+                || key == "custom_config_scripts" \
+                || key == "custom_dualwan_scripts") {
                 flag=1;
                 if (value !~ /^[0-9]$/)
                     invalid=1;
-            } else if ($1 == "wan_1_domain" || $1 == "wan_2_domain") {
+            } else if (key == "wan_1_domain" || key == "wan_2_domain") {
                 flag=1;
                 if (value !~ /^[0-9]$/ || (value == "0" && dmq != "0"))
                     invalid=1;
-            } else if ($1 == "ruid_interval_day") {
+            } else if (key == "ruid_interval_day") {
                 flag=1;
                 if (value !~ /^[1-9]$|^[1-2][0-9]$|^[3][0-1]$/)
                     invalid=3;
-            } else if ($1 == "ruid_timer_hour") {
+            } else if (key == "ruid_timer_hour") {
                 flag=1;
                 if (value !~ /^[0-9]$|^[1][0-9]$|^[2][0-3]$|^[\*]$/)
                     invalid=4;
                 if (value == "\*")
                     value="\"\*\"";
-            } else if ($1 == "ruid_timer_min") {
+            } else if (key == "ruid_timer_min") {
                 flag=1;
                 if (value !~ /^[0-9]$|^[1-5][0-9]$|^[\*]$/)
                     invalid=5;
                 if (value == "\*")
                     value="\"\*\"";
-            } else if ($1 == "ruid_retry_num") {
+            } else if (key == "ruid_retry_num") {
                 flag=1;
                 if (value !~ /^[0-9]$|^[1-9][0-9]$/)
                     invalid=1;
-            } else if ($1 == "wan_access_port" || $1 == "usage_mode") {
+            } else if (key == "wan_access_port" || key == "usage_mode" || key == "repo_site") {
                 flag=1;
                 if (value !~ /^[01]$/)
                     invalid=1;
-            } else if ($1 == "vpn_client_polling_time") {
+            } else if (key == "vpn_client_polling_time") {
                 flag=1;
                 if (value !~ /^[0-9]$|^[1][0-9]$|^[2][0]$/)
                     invalid=1;
-            } else if ($1 == "dn_cache_time") {
+            } else if (key == "dn_cache_time") {
                 flag=1;
                 if (value !~ /^[0-9]+$/ || (value + 0) < 0 || (value + 0) > 2147483)
                     invalid=1;
-            } else if ($1 == "clear_route_cache_time_interval") {
+            } else if (key == "clear_route_cache_time_interval") {
                 flag=1;
                 if (value !~ /^[0-9]$|^[1][0-9]$|^[2][0-4]$/)
                     invalid=1;
-            } else if ($1 == "iptv_access_mode") {
+            } else if (key == "iptv_access_mode") {
                 flag=1;
                 if (value !~ /^[12]$/)
                     invalid=1;
-            } else if ($1 == "hnd_br0_bcmmcast_mode") {
+            } else if (key == "hnd_br0_bcmmcast_mode") {
                 flag=1;
                 if (value !~ /^[0-2]$/)
                     invalid=1;
-            } else if ($1 == "wan1_udpxy_port") {
+            } else if (key == "wan1_udpxy_port") {
                 flag=1;
                 if (value !~ /^[1-9]$|^[1-9][0-9]+$/ || (value + 0) < 1 || (value + 0) > 65535)
                     invalid=1;
-            } else if ($1 == "wan1_udpxy_buffer" || $1 == "wan2_udpxy_buffer") {
+            } else if (key == "wan1_udpxy_buffer" || key == "wan2_udpxy_buffer") {
                 flag=1;
                 if (value !~ /^[1-9]$|^[1-9][0-9]+$/ || (value + 0) < 4096 || (value + 0) > 2097152)
                     invalid=1;
-            } else if ($1 == "wan1_udpxy_client_num" || $1 == "wan2_udpxy_client_num") {
+            } else if (key == "wan1_udpxy_client_num" || key == "wan2_udpxy_client_num") {
                 flag=1;
                 if (value !~ /^[1-9]$|^[1-9][0-9]+$/ || (value + 0) < 1 || (value + 0) > 5000)
                     invalid=1;
-            } else if ($1 == "wan2_udpxy_port") {
+            } else if (key == "wan2_udpxy_port") {
                 flag=1;
                 if (value !~ /^[1-9]$|^[1-9][0-9]+$/ || (value + 0) < 1 || (value + 0) > 65535)
                     invalid=1;
-            } else if ($1 == "wan0_dest_tcp_port" \
-                || $1 == "wan0_dest_udp_port" \
-                || $1 == "wan0_dest_udplite_port" \
-                || $1 == "wan0_dest_sctp_port" \
-                || $1 == "wan1_dest_tcp_port" \
-                || $1 == "wan1_dest_udp_port" \
-                || $1 == "wan1_dest_udplite_port" \
-                || $1 == "wan1_dest_sctp_port") {
+            } else if (key == "wan0_dest_tcp_port" \
+                || key == "wan0_dest_udp_port" \
+                || key == "wan0_dest_udplite_port" \
+                || key == "wan0_dest_sctp_port" \
+                || key == "wan1_dest_tcp_port" \
+                || key == "wan1_dest_udp_port" \
+                || key == "wan1_dest_udplite_port" \
+                || key == "wan1_dest_sctp_port") {
                 flag=1;
-                if (value ~ /[^0-9\:\,]|^[\,\:]|[\,\:]$|[\,\:][\,\:]+|[0-9]+[\:][0-9]+[\:]/)
-                    invalid=1;
-            } else if ($1 == "custom_data_file_1" \
-                || $1 == "custom_data_file_2" \
-                || $1 == "wan_1_domain_client_src_addr_file" \
-                || $1 == "wan_1_domain_file" \
-                || $1 == "wan_2_domain_client_src_addr_file"\
-                || $1 == "wan_2_domain_file" \
-                || $1 == "wan_1_client_src_addr_file" \
-                || $1 == "wan_2_client_src_addr_file" \
-                || $1 == "high_wan_1_client_src_addr_file" \
-                || $1 == "high_wan_2_client_src_addr_file" \
-                || $1 == "wan_1_src_to_dst_addr_file" \
-                || $1 == "wan_2_src_to_dst_addr_file" \
-                || $1 == "high_wan_1_src_to_dst_addr_file" \
-                || $1 == "wan_1_src_to_dst_addr_port_file" \
-                || $1 == "wan_2_src_to_dst_addr_port_file" \
-                || $1 == "high_wan_1_src_to_dst_addr_port_file" \
-                || $1 == "local_ipsets_file" \
-                || $1 == "proxy_remote_node_addr_file" \
-                || $1 == "custom_hosts_file" \
-                || $1 == "iptv_box_ip_lst_file" \
-                || $1 == "iptv_isp_ip_lst_file" \
-                || $1 == "custom_clear_scripts_filename" \
-                || $1 == "custom_config_scripts_filename" \
-                || $1 == "custom_dualwan_scripts_filename") {
+                if (value != "") {
+                    if (value !~ /^(([1-9][0-9]*|[1-9][0-9]*[\:][1-9][0-9]*)[\,])*([1-9][0-9]*|[1-9][0-9]*[\:][1-9][0-9]*)$/)
+                        invalid=1;
+                    else if (index(value, ",") > 0) {
+                        port_value=value;
+                        gsub(":", ",", port_value);
+                        split(port_value, p_arr, ",");
+                        split(value, port_arr, ",");
+                        for (idd in port_arr) {
+                            x_count=0;
+                            port_pos=index(port_arr[idd], ":");
+                            if (port_pos > 0) {
+                                if ((substr(port_arr[idd], 1, port_pos-1) + 0) > 65535 \
+                                    || (substr(port_arr[idd], port_pos+1) + 0) > 65535 \
+                                    || (substr(port_arr[idd], 1, port_pos-1) + 0) >= (substr(port_arr[idd], port_pos+1) + 0)) {
+                                    invalid=1;
+                                    break;
+                                }
+                                for (iidd in p_arr) {
+                                    if (p_arr[iidd] == substr(port_arr[idd], 1, port_pos-1))
+                                        x_count++;
+                                }
+                                if (x_count > 1) {
+                                    invalid=1;
+                                    break;
+                                }
+                                x_count=0;
+                                for (iidd in p_arr) {
+                                    if (p_arr[iidd] == substr(port_arr[idd], port_pos+1))
+                                        x_count++;
+                                }
+                                if (x_count > 1) {
+                                    invalid=1;
+                                    break;
+                                }
+                            } else {
+                                if ((port_arr[idd] + 0) > 65535) {
+                                    invalid=1;
+                                    break;
+                                }
+                                for (iidd in p_arr) {
+                                    if (p_arr[iidd] == port_arr[idd])
+                                        x_count++;
+                                }
+                                if (x_count > 1) {
+                                    invalid=1;
+                                    break;
+                                }
+                            }
+                        }
+                        delete p_arr;
+                        delete port_arr;
+                    } else {
+                        port_pos=index(value, ":");
+                        if (port_pos > 0) {
+                            if ((substr(value, 1, port_pos-1) + 0) > 65535 \
+                                || (substr(value, port_pos+1) + 0) > 65535 \
+                                || (substr(value, 1, port_pos-1) + 0) >= (substr(value, port_pos+1) + 0))
+                                invalid=1;
+                        } else if ((value + 0) > 65535)
+                            invalid=1;
+                    }
+                }
+            } else if (key == "custom_data_file_1" \
+                || key == "custom_data_file_2" \
+                || key == "wan_1_domain_client_src_addr_file" \
+                || key == "wan_1_domain_file" \
+                || key == "wan_2_domain_client_src_addr_file"\
+                || key == "wan_2_domain_file" \
+                || key == "wan_1_client_src_addr_file" \
+                || key == "wan_2_client_src_addr_file" \
+                || key == "high_wan_1_client_src_addr_file" \
+                || key == "high_wan_2_client_src_addr_file" \
+                || key == "wan_1_src_to_dst_addr_file" \
+                || key == "wan_2_src_to_dst_addr_file" \
+                || key == "high_wan_1_src_to_dst_addr_file" \
+                || key == "wan_1_src_to_dst_addr_port_file" \
+                || key == "wan_2_src_to_dst_addr_port_file" \
+                || key == "high_wan_1_src_to_dst_addr_port_file" \
+                || key == "local_ipsets_file" \
+                || key == "proxy_remote_node_addr_file" \
+                || key == "custom_hosts_file" \
+                || key == "iptv_box_ip_lst_file" \
+                || key == "iptv_isp_ip_lst_file" \
+                || key == "custom_clear_scripts_filename" \
+                || key == "custom_config_scripts_filename" \
+                || key == "custom_dualwan_scripts_filename") {
                 flag=2;
                 if ((value !~ /^[\"]([\/][[:alnum:]_\-][[:alnum:]_\.\-]*)+[\"]$/ && value !~ /^([\/][[:alnum:]_\-][[:alnum:]_\.\-]*)+$/) \
                     || value ~ /[\/][\/]/)
                     invalid=2;
-            } else if ($1 == "pre_dns") {
+            } else if (key == "pre_dns") {
                 flag=2;
-                if (value !~ /^[\"]([0-9]{1,3}[\.]){3}[0-9]{1,3}[\"]$|([0-9]{1,3}[\.]){3}[0-9]{1,3}/ \
-                    || value ~ /[3-9][0-9][0-9]|[2][6-9][0-9]|[2][5][6-9]/)
+                if (value !~ "'"${patt}"'")
                     invalid=2;
             }
             if (flag == 0) next;
             if (flag == 2) {
-                if (value != "\""i[$1]"\"")
+                if (value != "\""i[key]"\"")
                     x++;
             } else {
-                if ($1 == "ruid_timer_hour" || $1 == "ruid_timer_min") {
-                    if (value != "\""i[$1]"\"") x++;
-                } else if (value != i[$1]) x++;
+                if (key == "ruid_timer_hour" || key == "ruid_timer_min") {
+                    if (value != "\""i[key]"\"") x++;
+                } else if (value != i[key]) x++;
             }
             if (invalid == 2)
-                value="\\\""ii[$1]"\\\"";
+                value="\\\""ii[key]"\\\"";
             else if (invalid != 0)
-                value=ii[$1];
+                value=ii[key];
             if (flag == 2 && invalid != 2 \
                 && match(value, /^[\"][^\"]*[\"]$/) > 0) {
                 value="\\\""value"\\\"";
             }
-            if (invalid == 1 || invalid == 2)
-                str_buffer=str_buffer" -e \"s\|\^\[\[\:space\:\]\]\*"$1"=\.\*\$\|"$1"="value"\|\"";
-            else if (invalid == 3)
-                str_buffer=str_buffer" -e \"s\|\^\[\[\:space\:\]\]\*"$1"=\.\*\$\|"$1"="value"  ## 间隔天数（1~31）；\"ruid_interval_day=5\"表示每隔5天。\|\"";
-            else if (invalid == 4)
-                str_buffer=str_buffer" -e \"s\|\^\[\[\:space\:\]\]\*"$1"=\.\*\$\|"$1"="value"    ## 时间小时数（0~23，\*表示由系统指定）；\"ruid_timer_hour=3\"表示更新当天的凌晨3点。\|\"";
-            else if (invalid == 5)
-                str_buffer=str_buffer" -e \"s\|\^\[\[\:space\:\]\]\*"$1"=\.\*\$\|"$1"="value"     ## 时间分钟数（0~59，\*表示由系统指定）；\"ruid_timer_min=18\"表示更新当天的凌晨3点18分。\|\"";
-            print "local_"$1"="value;
-            print "local_"$1"_flag=\"1\"";
+            if (iii[key"_flag"] != 1) {
+                if (invalid == 1 || invalid == 2)
+                    str_buffer=str_buffer" -e \"s\|\^\[\[\:space\:\]\]\*"key"=\.\*\$\|"key"="value"\|\"";
+                else if (invalid == 3)
+                    str_buffer=str_buffer" -e \"s\|\^\[\[\:space\:\]\]\*"key"=\.\*\$\|"key"="value"  ## 间隔天数（1~31）；\"ruid_interval_day=5\"表示每隔5天。\|\"";
+                else if (invalid == 4)
+                    str_buffer=str_buffer" -e \"s\|\^\[\[\:space\:\]\]\*"key"=\.\*\$\|"key"="value"    ## 时间小时数（0~23，\*表示由系统指定）；\"ruid_timer_hour=3\"表示更新当天的凌晨3点。\|\"";
+                else if (invalid == 5)
+                    str_buffer=str_buffer" -e \"s\|\^\[\[\:space\:\]\]\*"key"=\.\*\$\|"key"="value"     ## 时间分钟数（0~59，\*表示由系统指定）；\"ruid_timer_min=18\"表示更新当天的凌晨3点18分。\|\"";
+                print "local_"key"="value"; local_"key"_flag=\"1\";";
+                iii[key"_flag"]=1;
+            }
             count++;
         } END{
             param_total=length(i);
@@ -1319,6 +1518,9 @@ lz_get_config_data() {
         ## 返回值：无
         lz_fix_lost_data
         lz_restore_cfg_file
+    elif [ "$( lz_get_data_status )" = "1" ]; then
+        lz_fix_lost_data
+        lz_restore_cfg_file
     else
         original_length="$( awk 'BEIGN{x=-1; y=-1; z=0;} \
             /EOF_CFG/ {if ($0 ~ /<<EOF_CFG/) x=NR; else if ($0 ~ /^EOF_CFG/) y=NR; z++; if (z > 1) exit;} \
@@ -1333,16 +1535,17 @@ lz_get_config_data() {
         sed -i "s|^[[:space:]]*clear_route_cache_time_interval=${local_clear_route_cache_time_interval}|clear_route_cache_time_interval=0|" "${PATH_CONFIGS}/lz_rule_config.sh" > /dev/null 2>&1
         local_clear_route_cache_time_interval="0"
     fi
-    eval "$( awk -F "=" -v value="" -v x=0 -v fname="${PATH_FUNC}/lz_define_global_variables.sh" '$0 ~ /^[[:space:]]*udpxy_used[=]/ \
-        && $1 == "udpxy_used" {
+    eval "$( awk -F "=" -v value="" -v x=0 -v fname="${PATH_FUNC}/lz_define_global_variables.sh" '$0 ~ /^[[:space:]]*udpxy_used[=]/ {
             x++;
+            key=$1;
+            gsub(/[[:space:]]/, "", key);
             value=$2;
             gsub(/[[:space:]#].*$/, "", value);
             if (value !~ /^[0-9]$/) {
                 value="5";
-                system("sed -i \"s\|\^\[\[\:space\:\]\]\*"$1"=\.\*\$\|"$1"="value"\|\" \""fname"\" \> \/dev\/null 2\>\&1");
+                system("sed -i \"s\|\^\[\[\:space\:\]\]\*"key"=\.\*\$\|"key"="value"\|\" \""fname"\" \> \/dev\/null 2\>\&1");
             }
-            print "local_"$1"="value;
+            print "local_"key"="value;
             exit;
         } END{
             if (x > 0)
@@ -1356,7 +1559,7 @@ lz_get_config_data() {
 ##     全局常量及变量
 ## 返回值：无
 lz_full_data_backup() {
-    eval "$( echo "${param_list}" | awk '/^[[:alnum:]_][[:alnum:]_]*$/ {print "echo lz_config_"$1"=\$\{local_"$1"\}"}' )" > "${PATH_CONFIGS}/lz_rule_config.box"
+    eval "$( echo "${param_list}" | awk '/^[[:alnum:]_]+$/ {print "echo lz_config_"$1"=\$\{local_"$1"\}"}' )" > "${PATH_CONFIGS}/lz_rule_config.box"
     chmod 775 "${PATH_CONFIGS}/lz_rule_config.box" > /dev/null 2>&1
 }
 
@@ -1366,7 +1569,7 @@ lz_full_data_backup() {
 ## 返回值：无
 lz_backup_data_changed() {
     eval "$( eval "$( echo "${param_list}" | sed -n "/^all_foreign_wan_port$/,/^custom_dualwan_scripts_filename$/{
-            s/^[[:alnum:]_][[:alnum:]_]*$/echo \"& \${local_&_changed}\"/;p
+            s/^[[:alnum:]_]\+$/echo \"& \${local_&_changed}\"/;p
         }" )" | awk -v x="0" '$2 == "1" {
             x++;
             printf " -e \"s|^[[:space:]]\*lz_config_%s=\${local_ini_%s}|lz_config_%s=\${local_%s}|\"",$1,$1,$1,$1;
@@ -1379,7 +1582,7 @@ lz_backup_data_changed() {
 ##     全局常量及变量
 ## 返回值：无
 lz_restore_box_data() {
-    eval "$( echo "${param_list}" | awk '/^[[:alnum:]_][[:alnum:]_]*$/ {print "echo lz_config_"$1"=\$\{local_ini_"$1"\}"}' )" > "${PATH_CONFIGS}/lz_rule_config.box"
+    eval "$( echo "${param_list}" | awk '/^[[:alnum:]_]+$/ {print "echo lz_config_"$1"=\$\{local_ini_"$1"\}"}' )" > "${PATH_CONFIGS}/lz_rule_config.box"
     chmod 775 "${PATH_CONFIGS}/lz_rule_config.box" > /dev/null 2>&1
 }
 
@@ -1388,10 +1591,8 @@ lz_restore_box_data() {
 ##     全局常量及变量
 ## 返回值：无
 lz_get_box_data() {
-    ini_param_default_list="$( eval "$( echo "${param_list}" \
-        | sed "s/^[[:alnum:]_][[:alnum:]_]*$/echo &=\"\${local_ini_&}\"/" )" \
-        | sed 's/\"//g' )"
-    eval "$( awk -F "=" -v ini_param_default="${ini_param_default_list}" -v dmq="${dnsmasq_enable}" -v fname="${PATH_CONFIGS}/lz_rule_config.box" \
+    local  patt="^([\\\"]${REGEX_IPV4}[\\\"]|${REGEX_IPV4})$"
+    eval "$( awk -F "=" -v ini_param_default="$( lz_get_ini_param_default_list )" -v dmq="${dnsmasq_enable}" -v fname="${PATH_CONFIGS}/lz_rule_config.box" \
         'BEGIN{
             count=0;
             mark=0;
@@ -1401,13 +1602,14 @@ lz_get_box_data() {
             for (id in arr) {
                 pos=index(arr[id], "=");
                 i[substr(arr[id], 1, pos-1)]=substr(arr[id], pos+1);
+                iii[substr(arr[id], 1, pos-1)"_flag"]=0;
             }
             delete arr;
             i["policy_mode"]=5;
         } $0 ~ /^[[:space:]]*lz_config_[[:alnum:]_]+[=]/ {
             flag=0;
             key=$1;
-            sub(/^lz_config_/, "", key);
+            sub(/^[[:space:]]*lz_config_/, "", key);
             value=$2;
             gsub(/[[:space:]#].*$/, "", value);
             invalid=0;
@@ -1508,7 +1710,7 @@ lz_get_box_data() {
                 flag=1;
                 if (value !~ /^[0-9]$|^[1-9][0-9]$/)
                     invalid=1;
-            } else if (key == "wan_access_port") {
+            } else if (key == "wan_access_port" || key == "repo_site") {
                 flag=1;
                 if (value !~ /^[01]$/)
                     invalid=1;
@@ -1561,8 +1763,69 @@ lz_get_box_data() {
                 || key == "wan1_dest_udplite_port" \
                 || key == "wan1_dest_sctp_port") {
                 flag=1;
-                if (value ~ /[^0-9\:\,]|^[\,\:]|[\,\:]$|[\,\:][\,\:]+|[0-9]+[\:][0-9]+[\:]/)
-                    invalid=1;
+                if (value != "") {
+                    if (value !~ /^(([1-9][0-9]*|[1-9][0-9]*[\:][1-9][0-9]*)[\,])*([1-9][0-9]*|[1-9][0-9]*[\:][1-9][0-9]*)$/)
+                        invalid=1;
+                    else if (index(value, ",") > 0) {
+                        port_value=value;
+                        gsub(":", ",", port_value);
+                        split(port_value, p_arr, ",");
+                        split(value, port_arr, ",");
+                        for (idd in port_arr) {
+                            x_count=0;
+                            port_pos=index(port_arr[idd], ":");
+                            if (port_pos > 0) {
+                                if ((substr(port_arr[idd], 1, port_pos-1) + 0) > 65535 \
+                                    || (substr(port_arr[idd], port_pos+1) + 0) > 65535 \
+                                    || (substr(port_arr[idd], 1, port_pos-1) + 0) >= (substr(port_arr[idd], port_pos+1) + 0)) {
+                                    invalid=1;
+                                    break;
+                                }
+                                for (iidd in p_arr) {
+                                    if (p_arr[iidd] == substr(port_arr[idd], 1, port_pos-1))
+                                        x_count++;
+                                }
+                                if (x_count > 1) {
+                                    invalid=1;
+                                    break;
+                                }
+                                x_count=0;
+                                for (iidd in p_arr) {
+                                    if (p_arr[iidd] == substr(port_arr[idd], port_pos+1))
+                                        x_count++;
+                                }
+                                if (x_count > 1) {
+                                    invalid=1;
+                                    break;
+                                }
+                            } else {
+                                if ((port_arr[idd] + 0) > 65535) {
+                                    invalid=1;
+                                    break;
+                                }
+                                for (iidd in p_arr) {
+                                    if (p_arr[iidd] == port_arr[idd])
+                                        x_count++;
+                                }
+                                if (x_count > 1) {
+                                    invalid=1;
+                                    break;
+                                }
+                            }
+                        }
+                        delete p_arr;
+                        delete port_arr;
+                    } else {
+                        port_pos=index(value, ":");
+                        if (port_pos > 0) {
+                            if ((substr(value, 1, port_pos-1) + 0) > 65535 \
+                                || (substr(value, port_pos+1) + 0) > 65535 \
+                                || (substr(value, 1, port_pos-1) + 0) >= (substr(value, port_pos+1) + 0))
+                                invalid=1;
+                        } else if ((value + 0) > 65535)
+                            invalid=1;
+                    }
+                }
             } else if (key == "custom_data_file_1" \
                 || key == "custom_data_file_2" \
                 || key == "wan_1_domain_client_src_addr_file" \
@@ -1593,8 +1856,7 @@ lz_get_box_data() {
                     invalid=2;
             } else if (key == "pre_dns") {
                 flag=2;
-                if (value !~ /^[\"]([0-9]{1,3}[\.]){3}[0-9]{1,3}[\"]$|([0-9]{1,3}[\.]){3}[0-9]{1,3}/ \
-                    || value ~ /[3-9][0-9][0-9]|[2][6-9][0-9]|[2][5][6-9]/)
+                if (value !~ "'"${patt}"'")
                     invalid=2;
             }
             if (flag == 0) next;
@@ -1605,9 +1867,12 @@ lz_get_box_data() {
             if (flag == 2 && invalid != 2 \
                 && match(value, /^[\"][^\"]*[\"]$/) > 0)
                 value="\\\""value"\\\"";
-            if (invalid != 0)
-                str_buffer=str_buffer" -e \"s\|\^\[\[\:space\:\]\]\*lz_config_"key"=\.\*\$\|lz_config_"key"="value"\|\"";
-            print "local_ini_"key"="value;
+            if (iii[key"_flag"] != 1) {
+                if (invalid != 0)
+                    str_buffer=str_buffer" -e \"s\|\^\[\[\:space\:\]\]\*lz_config_"key"=\.\*\$\|lz_config_"key"="value"\|\"";
+                print "local_ini_"key"="value"; local_ini_"key"_flag=\"1\";";
+                iii[key"_flag"]=1;
+            }
             if (invalid != 6) count++;
         } END{
             param_total=length(i)-1;
@@ -1616,6 +1881,7 @@ lz_get_box_data() {
             } else if (str_buffer != "")
                 system("sed -i"str_buffer" "fname);
         }' "${PATH_CONFIGS}/lz_rule_config.box" )"
+    [ "$( lz_get_ini_data_status )" = "1" ] && lz_restore_box_data
     if [ "${local_ini_route_cache}" != "0" ] && [ "${local_ini_drop_sys_caches}" != "0" ] && [ "${local_ini_clear_route_cache_time_interval}" != "0" ]; then
         sed -i "s|^[[:space:]]*lz_config_clear_route_cache_time_interval=${local_ini_clear_route_cache_time_interval}|lz_config_clear_route_cache_time_interval=0|" "${PATH_CONFIGS}/lz_rule_config.box" > /dev/null 2>&1
         local_ini_clear_route_cache_time_interval="0"
@@ -1629,7 +1895,7 @@ lz_get_box_data() {
 ##     local_changed
 lz_get_cfg_changed() {
     eval "$( eval "$( echo "${param_list}" | sed -n "/^all_foreign_wan_port$/,/^custom_dualwan_scripts_filename$/{
-            s/^[[:alnum:]_][[:alnum:]_]*$/echo \"& \${local_ini_&} \${local_&}\"/;p}" )" \
+            s/^[[:alnum:]_]\+$/echo \"& \${local_ini_&} \${local_&}\"/;p}" )" \
         | awk -v x="0" '$2 != $3 {x++; print "local_"$1"_changed=\"1\"";} \
             END{if (x > 0) print "local_changed=\"1\"";}' )"
 }
@@ -1640,7 +1906,7 @@ lz_get_cfg_changed() {
 ## 返回值：无
 lz_restore_config() {
     eval "$( eval "$( echo "${param_list}" | sed -n "/^all_foreign_wan_port$/,/^custom_dualwan_scripts_filename$/{
-            s/^[[:alnum:]_][[:alnum:]_]*$/echo \"& \${local_&_changed}\"/;p}" )" \
+            s/^[[:alnum:]_]\+$/echo \"& \${local_&_changed}\"/;p}" )" \
         | awk -v x="0" '$2 == "1" {
             x++;
             if ($1 == "ruid_interval_day")
@@ -1655,6 +1921,8 @@ lz_restore_config() {
         | awk -v fname="${PATH_CONFIGS}/lz_rule_config.sh" 'NF != "0" {print "sed -i"$0" "fname}' )"
     [ "${local_udpxy_used_changed}" = "1" ] \
         && sed -i "s|^[[:space:]]*udpxy_used=${local_udpxy_used}|udpxy_used=${local_ini_udpxy_used}|" "${PATH_FUNC}/lz_define_global_variables.sh"
+    eval "$( echo "${param_list}" | sed -n "/^all_foreign_wan_port$/,/^custom_dualwan_scripts_filename$/{
+        s/^[[:alnum:]_]\+$/local_&=\"\${local_ini_&}\"/;P}" )"
 }
 
 ## 将当前配置优化至IPTV配置函数
@@ -1669,7 +1937,7 @@ lz_optimize_to_iptv() {
             flag=0;
             update=0;
             key=$1;
-            sub(/^lz_config_/, "", key);
+            sub(/^[[:space:]]*lz_config_/, "", key);
             value=$2;
             gsub(/[[:space:]#].*$/, "", value);
             if (key == "all_foreign_wan_port" \
@@ -1729,12 +1997,17 @@ lz_optimize_to_iptv() {
 ## 返回值：无
 lz_optimize_to_hd() {
     [ "${1}" != "hd" ] && [ "${1}" != "iptv" ] && return
-    eval "$( awk -F "=" -v fname="${PATH_CONFIGS}/lz_rule_config.box" -v fnm="${PATH_CONFIGS}/lz_rule_config.sh" \
-        '$0 ~ /^[[:space:]]*lz_config_[[:alnum:]_]+[=]/ && $1 == "lz_config_usage_mode" {
+    eval "$( awk -F "=" \
+        '$0 ~ /^[[:space:]]*lz_config_usage_mode[=]/ {
             key=$1;
-            sub(/^lz_config_/, "", key);
+            sub(/^[[:space:]]*lz_config_/, "", key);
             value=$2;
             gsub(/[[:space:]#].*$/, "", value);
+            print key,value;
+        }' "${PATH_CONFIGS}/lz_rule_config.box" \
+        | awk -v fname="${PATH_CONFIGS}/lz_rule_config.box" -v fnm="${PATH_CONFIGS}/lz_rule_config.sh" '!i[$1]++ {
+            key=$1;
+            value=$2;
             if (value != 1) {
                 value=1;
                 system("sed -i \"s\|\^\[\[\:space\:\]\]\*lz_config_"key"=\.\*\$\|lz_config_"key"="value"\|\" \""fname"\" \> \/dev\/null 2\>\&1");
@@ -1742,7 +2015,7 @@ lz_optimize_to_hd() {
             }
             print "local_ini_"key"="value;
             print "local_"key"="value;
-        }' "${PATH_CONFIGS}/lz_rule_config.box" )"
+        }' )"
 }
 
 ## 将当前配置恢复至动态分流模式RN配置函数
@@ -1752,12 +2025,17 @@ lz_optimize_to_hd() {
 ## 返回值：无
 lz_restore_to_rn() {
     [ "$1" != "rn" ] && return
-    eval "$( awk -F "=" -v fnm="${PATH_CONFIGS}/lz_rule_config.sh" -v fname="${PATH_CONFIGS}/lz_rule_config.box" \
-        '$0 ~ /^[[:space:]]*lz_config_[[:alnum:]_]+[=]/ && $1 == "lz_config_usage_mode" {
+    eval "$( awk -F "=" \
+        '$0 ~ /^[[:space:]]*lz_config_usage_mode[=]/ {
             key=$1;
-            sub(/^lz_config_/, "", key);
+            sub(/^[[:space:]]*lz_config_/, "", key);
             value=$2;
             gsub(/[[:space:]#].*$/, "", value);
+            print key,value;
+        }' "${PATH_CONFIGS}/lz_rule_config.box" \
+        | awk -v fnm="${PATH_CONFIGS}/lz_rule_config.sh" -v fname="${PATH_CONFIGS}/lz_rule_config.box" '!i[$1]++ {
+            key=$1;
+            value=$2;
             if (value != 0) {
                 value=0;
                 system("sed -i \"s\|\^\[\[\:space\:\]\]\*lz_config_"key"=\.\*\$\|lz_config_"key"="value"\|\" \""fname"\" \> \/dev\/null 2\>\&1");
@@ -1765,7 +2043,7 @@ lz_restore_to_rn() {
             }
             print "local_ini_"key"="value;
             print "local_"key"="value;
-        }' "${PATH_CONFIGS}/lz_rule_config.box" )"
+        }')"
 }
 
 ## 接收WEB前端数据至配置文件函数
@@ -1776,7 +2054,7 @@ lz_restore_to_rn() {
 ## 返回值：无
 lz_get_web_data_to_config() {
     { [ ! -s "${SETTINGSFILE}" ] || [ ! -s "${1}" ]; } && return
-    awk -v key="" -v value="" -v str_buffer="" -v fname="${1}" -v prefix="${2}" '$1 ~ /^lz_rule_/ {
+    awk -v key="" -v value="" -v str_buffer="" -v fname="${1}" -v prefix="${2}" '$1 ~ /^lz_rule_/ && !i[$1]++ {
         key=$1;
         sub(/^lz_rule_/, "", key);
         value=$2;
@@ -1840,20 +2118,20 @@ lz_variable_initialize
 lz_init_cfg_data
 
 ## 获取重新安装标识
-local_reinstall="$( grep -c 'QnkgTFog5aaZ5aaZ5ZGc77yI6Juk6J[\+]G5aKp5YS[\/]77yJ' "${PATH_FUNC}/lz_define_global_variables.sh" )"
+local_reinstall="$( grep -wc 'QnkgTFog5aaZ5aaZ5ZGc77yI6Juk6J[+]G5aKp5YS[\/]77yJ' "${PATH_FUNC}/lz_define_global_variables.sh" )"
 
 ## 新安装的脚本，更新主运行脚本和脚本配置文件中初始缺省的路径数据
 if [ "${local_reinstall}" -gt "0" ] && [ "${PATH_LZ}" != "/jffs/scripts/lz" ]; then
-    sed -i "s:/jffs/scripts/lz/:${PATH_LZ}/:g" "${PATH_LZ}/lz_rule.sh" > /dev/null 2>&1
+    sed -i "s:/jffs/scripts/lz/:${PATH_LZ}/:g" "${PATH_LZ}/${PROJECT_FILENAME}" > /dev/null 2>&1
     [ -s "${PATH_CONFIGS}/lz_rule_config.sh" ] && sed -i "s:/jffs/scripts/lz/:${PATH_LZ}/:g" "${PATH_CONFIGS}/lz_rule_config.sh" > /dev/null 2>&1
 fi
 
 if [ -s "${PATH_CONFIGS}/lz_rule_config.box" ]; then
     ## 清除lz_rule_config.box内的错误字符内容及参数赋值等式中等号两端的非法空格
-    sed -i -e 's/^[[:space:]][[:space:]]*//' -e 's/[=][=][=]*/=/g' \
-        -e 's/^\(lz_config_[[:alnum:]_][[:alnum:]_]*\)[[:space:]][[:space:]]*\([=].*\)$/\1\2/' \
-        -e 's/^\(lz_config_[[:alnum:]_][[:alnum:]_]*[=]\)[[:space:]][[:space:]]*\([^[:space:]#].*\)$/\1\2/' \
-        -e 's/[[:space:]#].*$//' -e '/^lz_config_[[:alnum:]_][[:alnum:]_]*[=]/!d' "${PATH_CONFIGS}/lz_rule_config.box"
+    sed -i -e 's/^[[:space:]]\+//' -e 's/[=][=][=]*/=/g' \
+        -e 's/^\(lz_config_[[:alnum:]_]\+\)[[:space:]]\+\([=].*\)$/\1\2/' \
+        -e 's/^\(lz_config_[[:alnum:]_]\+[=]\)[[:space:]]\+\([^[:space:]#].*\)$/\1\2/' \
+        -e 's/[[:space:]#].*$//' -e '/^lz_config_[[:alnum:]_]\+[=]/!d' "${PATH_CONFIGS}/lz_rule_config.box"
     ## 删除lz_rule_config.box中可能出现的重复参数项
     awk -v x="0" '$1 ~ /^lz_config_[[:alnum:]_]+[=]/ && i[substr($1, 1, index($1, "="))]++ \
         {x++; printf " -e '\''%ss\/\^\.\*\$\/#\&\/'\''", NR;} END{if (x != "0") printf "\n";}' "${PATH_CONFIGS}/lz_rule_config.box" \
@@ -1892,12 +2170,12 @@ if [ ! -s "${PATH_CONFIGS}/lz_rule_config.sh" ]; then
     local_reinstall="$(( local_reinstall + 1 ))"
 else
     ## 清除lz_rule_config.sh内的错误字符内容及参数赋值等式中等号两端的非法空格
-    sed -i -e 's/^[[:space:]][[:space:]]*//' \
-        -e 's/^\([[:alnum:]_][[:alnum:]_]*\)[[:space:]][[:space:]]*\([=][^=].*\)$/\1\2/' \
-        -e 's/^\([[:alnum:]_][[:alnum:]_]*[=]\)[[:space:]][[:space:]]*\([^[:space:]#].*\)$/\1\2/' \
-        -e 's/^\([[:alnum:]_][[:alnum:]_]*[=][^[:space:]#]*\)[[:space:]][[:space:]]*[^[:space:]#][^[:space:]#]*\([[:space:]][[:space:]]*[^[:space:]#][^[:space:]#]*\)*/\1/' \
-        -e 's/[[:space:]][[:space:]]*$//' \
-        -e '/^\([[:space:]]*\|[#].*\|[[:alnum:]_][[:alnum:]_]*[=].*\)$/!d' "${PATH_CONFIGS}/lz_rule_config.sh"
+    sed -i -e 's/^[[:space:]]\+//' \
+        -e 's/^\([[:alnum:]_]\+\)[[:space:]]\+\([=][^=].*\)$/\1\2/' \
+        -e 's/^\([[:alnum:]_]\+[=]\)[[:space:]]\+\([^[:space:]#].*\)$/\1\2/' \
+        -e 's/^\([[:alnum:]_]\+[=][^[:space:]#]*\)[[:space:]]\+[^[:space:]#][^[:space:]#]*\([[:space:]]\+[^[:space:]#][^[:space:]#]*\)*/\1/' \
+        -e 's/[[:space:]]\+$//' \
+        -e '/^\([[:space:]]*\|[#].*\|[[:alnum:]_]\+[=].*\)$/!d' "${PATH_CONFIGS}/lz_rule_config.sh"
     ## 注释lz_rule_config.sh中的重复参数项
     awk -v x="0" '$1 ~ /^[[:alnum:]_]+[=]/ && i[substr($1, 1, index($1, "="))]++ \
         {x++; printf " -e '\''%ss\/\^\.\*\$\/DEL###\&\/'\''", NR;} END{if (x != "0") printf "\n";}' "${PATH_CONFIGS}/lz_rule_config.sh" \
@@ -2019,6 +2297,7 @@ else
         fi
         ## 更新lz_rule_config.box中的版本号
         sed -i "s|^[[:space:]]*lz_config_version=${local_ini_version}|lz_config_version=${local_version}|" "${PATH_CONFIGS}/lz_rule_config.box"
+        local_ini_version="${local_version}"
     fi
 fi
 
@@ -2045,8 +2324,15 @@ lz_restore_to_rn "${1}"
 
 if [ "${local_reinstall}" -gt "0" ]; then
     ## 删除重新安装标识
-    sed -i "/QnkgTFog5aaZ5aaZ5ZGc77yI6Juk6J+G5aKp5YS\/77yJ/d" "${PATH_FUNC}/lz_define_global_variables.sh" > /dev/null 2>&1
+    sed -i "/QnkgTFog5aaZ5aaZ5ZGc77yI6Juk6J[+]G5aKp5YS[\/]77yJ/d" "${PATH_FUNC}/lz_define_global_variables.sh" > /dev/null 2>&1
 fi
+
+## 生成并传递软件的配置参数
+eval "$( eval "$( echo "${param_list}" \
+    | sed -n "/^all_foreign_wan_port$/,/^custom_dualwan_scripts_filename$/{
+        s/^[[:alnum:]_]\+$/echo &=\"\${local_&}\"/;
+        p
+    }" )" )"
 
 ## 卸载变量
 ## 输入项：无

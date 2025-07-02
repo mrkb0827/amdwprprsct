@@ -1,5 +1,5 @@
 #!/bin/sh
-# lz_define_global_variables.sh v4.4.4
+# lz_define_global_variables.sh v4.7.4
 # By LZ 妙妙呜 (larsonzhang@gmail.com)
 # QnkgTFog5aaZ5aaZ5ZGc77yI6Juk6J+G5aKp5YS/77yJ（首次运行标识，切勿修改）
 
@@ -13,23 +13,11 @@
 # shellcheck disable=SC2034  # Unused variables left for readability
 # shellcheck disable=SC2154
 
-## DNSMasq域名地址配置文件部署路径
-PATH_DNSMASQ_DOMAIN_CONF="${PATH_TMP}/dnsmasq"
-
-## 自定义域名地址解析配置文件名
-CUSTOM_HOSTS_CONF="lz_hosts.conf"
-
-## 第一WAN口域名地址配置文件名
-DOMAIN_WAN1_CONF="lz_wan1_domain.conf"
-
-## 第二WAN口域名地址配置文件名
-DOMAIN_WAN2_CONF="lz_wan2_domain.conf"
-
 ## 项目运行状态标识数据集锁名称
 ## 状态标识：不存在--项目未启动或处于终止运行STOP状态
 ## 状态标识内容：PROJECT_START_ID--项目启动运行
 ## 状态标识内容：空--项目已启动，处于暂停运行stop状态
-PROJECT_STATUS_SET="lz_rule_status"
+PROJECT_STATUS_SET="${PROJECT_ID}_status"
 
 ## 项目启动运行标识
 PROJECT_START_ID="168.168.168.168"
@@ -421,15 +409,33 @@ route_hardware_type="$( uname -m )"
 route_os_name="$( uname -o )"
 
 ## 路由器本地静态子网
-route_static_subnet="$( ip -o -4 address list | awk '$2 == "br0" {print $4}' | grep -Eo '([0-9]{1,3}[\.]){3}[0-9]{1,3}([\/][0-9]{1,3}){0,1}' )"
+route_static_subnet="$( ip -o -4 address list | awk '$2 == "br0" {print $4; exit;}' | grep -Eo "^${REGEX_IPV4_NET}$" )"
 
 ## 路由器本地IP地址
 route_local_ip="${route_static_subnet%/*}"
 
 ## 路由器本地子网
-route_local_subnet=""
-[ -n "${route_static_subnet}" ] && route_local_subnet="${route_static_subnet%.*}.0"
-[ "${route_static_subnet}" != "${route_static_subnet##*/}" ] && route_local_subnet="${route_local_subnet}/${route_static_subnet##*/}"
+route_local_subnet="$( awk -v ipv="${route_static_subnet}" 'function fix_cidr(ipa) {
+        if (ipa ~ "'"^${REGEX_IPV4_NET}$"'") {
+            if (split(ipa, arr, /\.|\//) == 5) {
+                pos = int(arr[5] / 8) + 1;
+                step = rshift(255, arr[5] % 8) + 1;
+                for (i = pos; i < 5; ++i) {
+                    if (i == pos)
+                        arr[i] = int(arr[i] / step) * step;
+                    else
+                        arr[i] = 0;
+                }
+                ipa = arr[1]"."arr[2]"."arr[3]"."arr[4];
+                if (arr[5] != "32")
+                    ipa = ipa"/"arr[5];
+            }
+            delete arr;
+        } else if (ipa != "")
+            ipa = "";
+        return ipa;
+    } \
+    BEGIN{print fix_cidr(ipv);}' )"
 
 ## 静态分流模式整体通道推送命令是否执行（0--未执行；1--已执行）
 command_from_all_executed="0"

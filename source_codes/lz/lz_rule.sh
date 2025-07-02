@@ -1,5 +1,5 @@
 #!/bin/sh
-# lz_rule.sh v4.4.4
+# lz_rule.sh v4.7.4
 # By LZ 妙妙呜 (larsonzhang@gmail.com)
 
 # 本软件采用CIDR（无类别域间路由，Classless Inter-Domain Routing）技术，是一个在Internet上创建附加地
@@ -9,18 +9,26 @@
 #BEGIN
 
 ## 技巧：
-##       上传编辑好的firewall-start文件和本代码至路由器后，开关防火墙即可启动本代码，不必重启路由器。
-##       也可通过SSH命令行窗口直接输入如下命令：
-##       启动/重启        /jffs/scripts/lz/lz_rule.sh
-##       暂停运行         /jffs/scripts/lz/lz_rule.sh stop
-##       终止运行         /jffs/scripts/lz/lz_rule.sh STOP
-##       恢复缺省配置     /jffs/scripts/lz/lz_rule.sh default
-##       动态分流模式配置 /jffs/scripts/lz/lz_rule.sh rn
-##       静态分流模式配置 /jffs/scripts/lz/lz_rule.sh hd
-##       IPTV模式配置     /jffs/scripts/lz/lz_rule.sh iptv
-##       运行状态查询     /jffs/scripts/lz/lz_rule.sh status
-##       网址信息查询     /jffs/scripts/lz/lz_rule.sh address 网址 [第三方DNS服务器IP地址（可选项）]
-##       解除运行锁       /jffs/scripts/lz/lz_rule.sh unlock
+##       上传编辑好的 firewall-start 文件和本代码至路由器后，开关防火墙即可启动本代码，不必重启路由器。
+##       也可通过 SSH 命令行窗口直接输入如下命令：
+##       启动/重启                  /jffs/scripts/lz/lz_rule.sh
+##       暂停运行                   /jffs/scripts/lz/lz_rule.sh stop
+##       终止运行                   /jffs/scripts/lz/lz_rule.sh STOP
+##       恢复缺省配置               /jffs/scripts/lz/lz_rule.sh default
+##       动态分流模式配置           /jffs/scripts/lz/lz_rule.sh rn
+##       静态分流模式配置           /jffs/scripts/lz/lz_rule.sh hd
+##       IPTV 模式配置              /jffs/scripts/lz/lz_rule.sh iptv
+##       显示运行状态               /jffs/scripts/lz/lz_rule.sh status
+##       网址信息查询               /jffs/scripts/lz/lz_rule.sh address 网址 [第三方 DNS 服务器 IP 地址（可选项）]
+##       解除运行锁                 /jffs/scripts/lz/lz_rule.sh unlock
+##       卸载 WEB 窗口页面          /jffs/scripts/lz/lz_rule.sh unwebui
+##       在线获取最新版本信息       /jffs/scripts/lz/lz_rule.sh lastver
+##       在线安装软件最新版本       /jffs/scripts/lz/lz_rule.sh upgrade
+##       在线更新 ISP 运营商数据    /jffs/scripts/lz/lz_rule.sh isp
+##       关闭系统 ASD 进程          /jffs/scripts/lz/lz_rule.sh fasd
+##       恢复系统 ASD 进程          /jffs/scripts/lz/lz_rule.sh rasd
+##       显示命令列表               /jffs/scripts/lz/lz_rule.sh cmd
+##       显示帮助                   /jffs/scripts/lz/lz_rule.sh help
 ## 提示：
 ##     1."启动/重启"命令用于手工启动或重启脚本服务。
 ##     2."暂停运行"命令仅是暂时关闭策略路由服务，重启路由器、线路接入或断开、WAN口IP改变、防火墙开关等
@@ -80,7 +88,12 @@
 ## -------------全局数据定义及初始化-------------------
 
 ## 版本号
-LZ_VERSION=v4.4.4
+LZ_VERSION=v4.7.4
+
+## 关闭系统ASD进程
+## 0--启用（缺省）；非0--停用
+## 保护本软件程序及相关资源文件不因其误判为恶意代码而被删除。
+FUCK_ASD=0
 
 ## 运行状态查询命令
 SHOW_STATUS="status"
@@ -92,10 +105,31 @@ ADDRESS_QUERY="address"
 FORCED_UNLOCKING="unlock"
 
 ## ISP运营商网段数据文件更新状态标识
-ISPIP_DATA_UPDATE="update"
+ISPIP_DATA_UPDATE_ID="update_id"
 
-## 卸载WEB界面命令
+## 卸载WEB窗口页面命令
 UNMOUNT_WEB_UI="unwebui"
+
+## 在线获取软件最新版本信息命令
+LAST_VERSION="lastver"
+
+## 在线安装软件最新版本命令
+UPGRADE_SOFTWARE="upgrade"
+
+## 在线更新ISP运营商网段数据文件命令
+ISPIP_DATA_UPDATE="ispip"
+
+## 关闭系统ASD进程命令
+DISABLE_ASD="fasd"
+
+## 恢复系统ASD进程命令
+RECOVER_ASD="rasd"
+
+## 显示显示命令列表命令
+DISPLAY_CMD_LIST="cmd"
+
+## 显示显示命令帮助命令
+DISPLAY_CMD_HELP="help"
 
 ## 系统记录文件名
 SYSLOG="SYSLOG="$(nvram get log_path)/syslog.log"
@@ -119,10 +153,13 @@ PATH_ADDONS="/jffs/addons"
 SETTINGSFILE="${PATH_ADDONS}/custom_settings.txt"
 PATH_WEBPAGE="$( readlink -f "/www/user" )"
 PATH_WEB_LZR="${PATH_WEBPAGE}/lzr"
+ASD_BIN="$( readlink -f "/root" )"
+{ [ -z "${ASD_BIN}" ] || [ "${ASD_BIN}" = '/' ]; } && ASD_BIN="$( readlink -f "/tmp" )"
+[ -d "/koolshare/bin" ] && ASD_BIN="$( readlink -f "/koolshare/bin" )"
 
-## 项目标识及项目文件名
-PROJECT_ID="lz_rule"
-PROJECT_FILENAME="${PROJECT_ID}.sh"
+## 项目文件名及项目标识
+PROJECT_FILENAME="${0##*/}"
+PROJECT_ID="${PROJECT_FILENAME%\.*}"
 
 ## 自启动引导文件部署路径
 PATH_BOOTLOADER="${PATH_BASE}"
@@ -139,6 +176,18 @@ SERVICE_EVENT_NAME="service-event"
 ## DNSMasq配置扩展全路径文件名
 DNSMASQ_CONF_ADD="/jffs/configs/dnsmasq.conf.add"
 
+## DNSMasq域名地址配置文件部署路径
+PATH_DNSMASQ_DOMAIN_CONF="${PATH_TMP}/dnsmasq"
+
+## 第一WAN口域名地址配置文件名
+DOMAIN_WAN1_CONF="lz_wan1_domain.conf"
+
+## 第二WAN口域名地址配置文件名
+DOMAIN_WAN2_CONF="lz_wan2_domain.conf"
+
+## 自定义域名地址解析配置文件名
+CUSTOM_HOSTS_CONF="lz_hosts.conf"
+
 ## 系统中的服务事件触发接口文件名
 SERVICE_INTERFACE_NAME="lz_rule_service.sh"
 
@@ -147,6 +196,9 @@ OPENVPN_EVENT_NAME="openvpn-event"
 
 ## Open虚拟专网事件触发接口文件名
 OPENVPN_EVENT_INTERFACE_NAME="lz_openvpn_event.sh"
+
+## 地址列表有效地址条目显示命令执行记录文件名
+RT_LIST_LOG="${PATH_TMP}/rtlist.log"
 
 ## 运行状态记录文件名
 STATUS_LOG="${PATH_TMP}/status.log"
@@ -172,8 +224,185 @@ UNLOCK_LOG="${PATH_TMP}/unlock.log"
 ## 更新ISP网络运营商CIDR网段数据脚本文件名
 UPDATE_FILENAME="lz_update_ispip_data.sh"
 
-if [ "${1}" != "${SHOW_STATUS}" ] && [ "${1}" != "${ADDRESS_QUERY}" ] \
-    && [ "${1}" != "${FORCED_UNLOCKING}" ]; then
+# IPv4网络地址正则表达式（含0.0.0.0/0）
+REGEX_IPV4_NET='(((25[0-5]|(2[0-4]|1[0-9]|[1-9])?[0-9])[\.]){3}(25[0-5]|(2[0-4]|1[0-9]|[1-9])?[0-9])([\/]([1-9]|[1-2][0-9]|3[0-2]))?|0[\.]0[\.]0[\.]0[\/]0)'
+
+# IPv4地址正则表达式（不含掩码）
+REGEX_IPV4="$( echo "${REGEX_IPV4_NET%"([\/]("*}" | sed 's/^(//' )"
+
+# IPv4网络地址SED格式正则表达式（含0.0.0.0/0）
+REGEX_SED_IPV4_NET="$( echo "${REGEX_IPV4_NET}" | sed 's/[(){}|+?]/\\&/g' )"
+
+# IPv4网络地址SED简化格式正则表达式
+REGEX_SED_IPV4_NET_SPL='\([0-9]\{1,3\}[\.]\)\{3\}[0-9]\{1,3\}\([\/][0-9]\{1,2\}\)\?'
+
+# IPv4地址SED格式正则表达式（不含掩码）
+REGEX_SED_IPV4="$( echo "${REGEX_IPV4}" | sed 's/[(){}|+?]/\\&/g' )"
+
+# IPv6地址正则表达式（不含掩码0）
+REGEX_IPV4_NET_V6="(([0-9a-fA-F]{1,4}:){7}[0-9a-fA-F]{1,4}|([0-9a-fA-F]{1,4}:){1,7}:|([0-9a-fA-F]{1,4}:){1,6}:([0-9a-fA-F]{1,4})|([0-9a-fA-F]{1,4}:){1,5}(:[0-9a-fA-F]{1,4}){1,2}|([0-9a-fA-F]{1,4}:){1,4}(:[0-9a-fA-F]{1,4}){1,3}|([0-9a-fA-F]{1,4}:){1,3}(:[0-9a-fA-F]{1,4}){1,4}|([0-9a-fA-F]{1,4}:){1,2}(:[0-9a-fA-F]{1,4}){1,5}|[0-9a-fA-F]{1,4}:((:[0-9a-fA-F]{1,4}){1,6})|:((:[0-9a-fA-F]{1,4}){1,7}|:)|fe80:(:[0-9a-fA-F]{1,4}){0,4}%[0-9a-zA-Z]+|::(ffff(:0{1,4})?:)?${REGEX_IPV4}|([0-9a-fA-F]{1,4}:){1,4}:${REGEX_IPV4})([\/]([1-9]|([1-9]|1[0-1])[0-9]|12[0-8]))?"
+
+[ "${PROJECT_FILENAME}" != "lz_rule.sh" ] && {
+    {
+        echo "$(lzdate)" [$$]:
+        echo "$(lzdate)" [$$]: LZ "${LZ_VERSION}" script commands start......
+        echo "$(lzdate)" [$$]: By LZ \(larsonzhang@gmail.com\)
+        echo "$(lzdate)" [$$]: ---------------------------------------------
+        echo "$(lzdate)" [$$]: Location: "${PATH_LZ}"
+        echo "$(lzdate)" [$$]: ---------------------------------------------
+        echo "$(lzdate)" [$$]: "The file name '${PROJECT_FILENAME}' is incorrect, and the software can't be executed!"
+        echo "$(lzdate)" [$$]: ---------------------------------------------
+        echo "$(lzdate)" [$$]: LZ "${LZ_VERSION}" script commands executed!
+        echo "$(lzdate)" [$$]:
+    } | tee -ai "${SYSLOG}" 2> /dev/null
+    exit
+}
+
+## 显示命令帮助函数
+## 输入项：
+##     $1--主执行脚本全路径文件名
+## 返回值：
+##     命令帮助
+lz_display_cmd_help() {
+    echo "Usage: ${1} COMMAND"
+    echo
+    echo "Commands:"
+    echo
+    echo "    Start/Restart"
+    echo "stop"
+    echo "    Pause"
+    echo "STOP"
+    echo "    Stop"
+    echo "default"
+    echo "    Factory Default"
+    echo "rn"
+    echo "    Dynamic Policy"
+    echo "hd"
+    echo "    Static Policy"
+    echo "iptv"
+    echo "    IPTV Mode"
+    echo "status"
+    echo "    Print running status"
+    echo "address [Network Address] [DNS(Optional)]"
+    echo "    Network Address Information"
+    echo "unlock"
+    echo "    Unlock the running lock"
+    echo "unwebui"
+    echo "    Uninstall Web UI page"
+    echo "lastver"
+    echo "    Latest Version Information"
+    echo "upgrade"
+    echo "    Upgrade software"
+    echo "ispip"
+    echo "    Update ISP IP data"
+    echo "fasd"
+    echo "    Disable System ASD Process"
+    echo "rasd"
+    echo "    Recover System ASD Process"
+    echo "cmd"
+    echo "    Print command list"
+    echo "help"
+    echo "    Print help"
+}
+
+## 显示命令列表函数
+## 输入项：
+##     $1--主执行脚本全路径文件名
+## 返回值：
+##     命令列表
+lz_display_cmd_list() {
+    echo "Command List:"
+    echo "    Start/Restart                   ${1}"
+    echo "    Pause                           ${1} stop"
+    echo "    Stop                            ${1} STOP"
+    echo "    Factory Default                 ${1} default"
+    echo "    Dynamic Policy                  ${1} rn"
+    echo "    Static Policy                   ${1} hd"
+    echo "    IPTV Mode                       ${1} iptv"
+    echo "    Print running status            ${1} status"
+    echo "    Network Address Information     ${1} address [Network Address] [DNS(Optional)]"
+    echo "    Unlock the running lock         ${1} unlock"
+    echo "    Uninstall Web UI page           ${1} unwebui"
+    echo "    Latest Version Information      ${1} lastver"
+    echo "    Upgrade software                ${1} upgrade"
+    echo "    Update ISP IP data              ${1} ispip"
+    echo "    Disable System ASD Process      ${1} fasd"
+    echo "    Recover System ASD Process      ${1} rasd"
+    echo "    Print command list              ${1} cmd"
+    echo "    Print help                      ${1} help"
+}
+
+while [ "${#}" -gt "0" ]
+do
+    case "${1}" in
+        "stop" | "STOP" | "default" | "rn" | "hd" | "iptv" | "${DISABLE_ASD}" | "${RECOVER_ASD}" \
+            | "${SHOW_STATUS}" | "${FORCED_UNLOCKING}" | "${UNMOUNT_WEB_UI}" | "${LAST_VERSION}" | "${UPGRADE_SOFTWARE}" \
+            | "${ISPIP_DATA_UPDATE}" | "${DISPLAY_CMD_LIST}" | "${DISPLAY_CMD_HELP}" | "${ISPIP_DATA_UPDATE_ID}" )
+            [ "${#}" = "1" ] && break
+        ;;
+        "${ADDRESS_QUERY}" )
+            [ "${#}" -le "3" ] && break
+        ;;
+    esac
+    echo "$(lzdate)" [$$]:
+    echo "$(lzdate)" [$$]: LZ "${LZ_VERSION}" script commands start......
+    echo "$(lzdate)" [$$]: By LZ \(larsonzhang@gmail.com\)
+    echo "$(lzdate)" [$$]: ---------------------------------------------
+    echo "$(lzdate)" [$$]: Location: "${PATH_LZ}"
+    echo "$(lzdate)" [$$]: ---------------------------------------------
+    echo
+    echo "${0}" "${@}"
+    echo
+    echo "No command specified: unknown argument '${*}'"
+    echo
+    ## 显示命令帮助
+    lz_display_cmd_help "${PATH_LZ}/${PROJECT_FILENAME}"
+    echo
+    ## 显示命令列表
+    lz_display_cmd_list "${PATH_LZ}/${PROJECT_FILENAME}"
+    echo
+    echo "$(lzdate)" [$$]: ---------------------------------------------
+    echo "$(lzdate)" [$$]: LZ "${LZ_VERSION}" script commands executed!
+    echo "$(lzdate)" [$$]:
+    exit
+done
+
+if [ "${1}" = "${DISPLAY_CMD_HELP}" ]; then
+    echo "$(lzdate)" [$$]:
+    echo "$(lzdate)" [$$]: LZ "${LZ_VERSION}" script commands start......
+    echo "$(lzdate)" [$$]: By LZ \(larsonzhang@gmail.com\)
+    echo "$(lzdate)" [$$]: ---------------------------------------------
+    echo "$(lzdate)" [$$]: Location: "${PATH_LZ}"
+    echo "$(lzdate)" [$$]: ---------------------------------------------
+    echo
+    ## 显示命令帮助
+    lz_display_cmd_help "${PATH_LZ}/${PROJECT_FILENAME}"
+    echo
+    echo "$(lzdate)" [$$]: ---------------------------------------------
+    echo "$(lzdate)" [$$]: LZ "${LZ_VERSION}" script commands executed!
+    echo "$(lzdate)" [$$]:
+    exit
+fi
+
+if [ "${1}" = "${DISPLAY_CMD_LIST}" ]; then
+    echo "$(lzdate)" [$$]:
+    echo "$(lzdate)" [$$]: LZ "${LZ_VERSION}" script commands start......
+    echo "$(lzdate)" [$$]: By LZ \(larsonzhang@gmail.com\)
+    echo "$(lzdate)" [$$]: ---------------------------------------------
+    echo "$(lzdate)" [$$]: Location: "${PATH_LZ}"
+    echo "$(lzdate)" [$$]: ---------------------------------------------
+    echo
+    ## 显示命令列表
+    lz_display_cmd_list "${PATH_LZ}/${PROJECT_FILENAME}"
+    echo
+    echo "$(lzdate)" [$$]: ---------------------------------------------
+    echo "$(lzdate)" [$$]: LZ "${LZ_VERSION}" script commands executed!
+    echo "$(lzdate)" [$$]:
+    exit
+fi
+
+if [ "${1}" != "${DISPLAY_CMD_LIST}" ] && [ "${1}" != "${DISPLAY_CMD_HELP}" ] && [ "${1}" != "${SHOW_STATUS}" ] \
+    && [ "${1}" != "${ADDRESS_QUERY}" ] && [ "${1}" != "${FORCED_UNLOCKING}" ]; then
     {
         echo "$(lzdate)" [$$]:
         echo "$(lzdate)" [$$]: LZ "${LZ_VERSION}" script commands start......
@@ -201,10 +430,10 @@ CALL_FUNC_SUBROUTINE="source ${PATH_FUNC}"
 PATH_LOCK="/var/lock"
 
 ## 文件同步锁全路径文件名
-LOCK_FILE="${PATH_LOCK}/lz_rule.lock"
+LOCK_FILE="${PATH_LOCK}/${PROJECT_ID}.lock"
 
 ## 脚本实例列表全路径文件名
-INSTANCE_LIST="${PATH_LOCK}/lz_rule_instance.lock"
+INSTANCE_LIST="${PATH_LOCK}/${PROJECT_ID}_instance.lock"
 
 ## 同步锁文件ID
 LOCK_FILE_ID="555"
@@ -233,9 +462,13 @@ if [ "${1}" != "${FORCED_UNLOCKING}" ]; then
     ## 运行实例处理
     sed -i -e '/^$/d' -e '/^[[:space:]]*$/d' -e '1d' "${INSTANCE_LIST}" > /dev/null 2>&1
     if grep -q 'lz_' "${INSTANCE_LIST}" 2> /dev/null; then
-        local_instance="$( grep 'lz_' ${INSTANCE_LIST} | sed -n 1p | sed -e 's/^[[:space:]]*//g' -e 's/[[:space:]]*$//g' )"
-        if [ "${local_instance}" = "lz_${1}" ] && [ "${local_instance}" != "lz_${SHOW_STATUS}" ] \
-            && [ "${local_instance}" != "lz_${ADDRESS_QUERY}" ]; then
+        local_instance="$( grep 'lz_' "${INSTANCE_LIST}" | sed -n 1p | sed -e 's/^[[:space:]]*//g' -e 's/[[:space:]]*$//g' )"
+        if [ "${local_instance}" = "lz_${1}" ] \
+            && [ "${local_instance}" != "lz_${SHOW_STATUS}" ] && [ "${local_instance}" != "lz_${ADDRESS_QUERY}" ] \
+            && [ "${local_instance}" != "lz_${LAST_VERSION}" ] && [ "${local_instance}" != "lz_${UPGRADE_SOFTWARE}" ] \
+            && [ "${local_instance}" != "lz_${UNMOUNT_WEB_UI}" ] && [ "${local_instance}" != "lz_${ISPIP_DATA_UPDATE}" ] \
+            && [ "${local_instance}" != "lz_${DISABLE_ASD}" ] && [ "${local_instance}" != "lz_${RECOVER_ASD}" ] \
+            && [ "${local_instance}" != "lz_${ISPIP_DATA_UPDATE_ID}" ]; then
             unset local_instance
             echo "$(lzdate)" [$$]: The policy routing service is being started by another instance.
             echo "$(lzdate)" [$$]: ---------------------------------------------
@@ -248,6 +481,51 @@ if [ "${1}" != "${FORCED_UNLOCKING}" ]; then
         unset local_instance
     fi
 fi
+
+## 替换系统asd进程函数
+## 输入项：
+##     全局变量及常量
+## 返回值：无
+fuck_asd_process() {
+    { [ -z "$( which asd )" ] || ! ps | grep -qE '[[:space:]\/]asd([[:space:]]|$)'; } && return
+    fuck_asd() {
+        echo "#!/bin/sh
+while true; do
+    sleep 2147483647
+done
+" > "${ASD_BIN}/asd"
+        [ ! -f "${ASD_BIN}/asd" ] && return 1
+        chmod +x "${ASD_BIN}/asd"
+        killall asd > /dev/null 2>&1 && mount -o bind -o sync "${ASD_BIN}/asd" "$( readlink -f "$( which asd )" )" > /dev/null 2>&1
+        usleep 250000
+        ! mount | grep -q '[[:space:]\/]asd[[:space:]]' && return 1
+        return 0
+    }
+    eval "$( mount | awk -v count=0 '/[[:space:]\/]asd[[:space:]]/ {
+        count++;
+        if (count > 1)
+            print "usleep 250000; killall asd > /dev/null 2>&1 && umount -f "$3" > /dev/null 2>&1";
+    } END{
+        if (count == 0)
+            print "fuck_asd";
+    }' )"
+}
+
+## 恢复系统原有asd进程函数
+## 输入项：
+##     全局变量及常量
+## 返回值：无
+recover_asd_process() {
+    [ ! -d "${PATH_LOCK}" ] && { mkdir -p "${PATH_LOCK}" > /dev/null 2>&1; chmod 777 "${PATH_LOCK}" > /dev/null 2>&1; }
+    eval "exec ${LOCK_FILE_ID}<>${LOCK_FILE}"; flock -x "${LOCK_FILE_ID}" > /dev/null 2>&1;
+    eval "$( mount | awk '/[[:space:]\/]asd[[:space:]]/ {
+        print "killall asd > /dev/null 2>&1 && umount -f "$3" > /dev/null 2>&1; usleep 250000";
+    } END{print "rm -f \"\${ASD_BIN}/asd\" > /dev/null 2>&1"}' )"
+    flock -u "${LOCK_FILE_ID}" > /dev/null 2>&1
+}
+
+## 替换系统asd进程
+[ "${FUCK_ASD}" = "0" ] && fuck_asd_process
 
 ## 项目文件管理函数
 ## 输入项：
@@ -272,6 +550,7 @@ lz_project_file_management() {
     [ ! -d "${PATH_TMP}" ] && mkdir -p "${PATH_TMP}" > /dev/null 2>&1
     chmod -R 775 "${PATH_LZ}"/* > /dev/null 2>&1
 
+    touch "${RT_LIST_LOG}" 2> /dev/null
     touch "${STATUS_LOG}" 2> /dev/null
     touch "${ADDRESS_LOG}" 2> /dev/null
     touch "${ROUTING_LOG}" 2> /dev/null
@@ -279,7 +558,16 @@ lz_project_file_management() {
     touch "${IPTABLES_LOG}" 2> /dev/null
     touch "${CRONTAB_LOG}" 2> /dev/null
     touch "${UNLOCK_LOG}" 2> /dev/null
-    [ "${1}" = "${UNMOUNT_WEB_UI}" ] && return "0"
+
+    rm -f "${PATH_WEB_LZR}/detect_version.js" > /dev/null 2>&1
+    rm -f "${PATH_WEB_LZR}/detect_asd.js" > /dev/null 2>&1
+
+    case "${1}" in
+        "${DISABLE_ASD}" | "${RECOVER_ASD}" \
+            | "${FORCED_UNLOCKING}" | "${UNMOUNT_WEB_UI}" | "${LAST_VERSION}" | "${UPGRADE_SOFTWARE}" )
+            return "0"
+        ;;
+    esac
 
     ## 检查脚本关键文件是否存在，若有不存在项则退出运行。
     local local_scripts_file_exist=1
@@ -383,7 +671,10 @@ lz_check_instance() {
     ! grep -q 'lz_' "${INSTANCE_LIST}" 2> /dev/null && return "1"
     local local_instance="$( grep 'lz_' "${INSTANCE_LIST}" | sed -n 1p | sed -e 's/^[[:space:]]*//g' -e 's/[[:space:]]*$//g' )"
     if [ "${local_instance}" != "lz_${1}" ] || [ "${local_instance}" = "lz_${SHOW_STATUS}" ] \
-        || [ "${local_instance}" = "lz_${ADDRESS_QUERY}" ]; then
+        || [ "${local_instance}" = "lz_${ADDRESS_QUERY}" ] || [ "${local_instance}" = "lz_${LAST_VERSION}" ] \
+        || [ "${local_instance}" = "lz_${UPGRADE_SOFTWARE}" ] || [ "${local_instance}" = "lz_${UNMOUNT_WEB_UI}" ] \
+        || [ "${local_instance}" = "lz_${ISPIP_DATA_UPDATE}" ] || [ "${local_instance}" = "lz_${DISABLE_ASD}" ] \
+        || [ "${local_instance}" = "lz_${RECOVER_ASD}" ] || [ "${local_instance}" = "lz_${ISPIP_DATA_UPDATE_ID}" ]; then
         return "1"
     fi
     drop_sys_caches="5"
@@ -415,8 +706,9 @@ lz_instance_exit() {
 
     [ -f "${INSTANCE_LIST}" ] && ! grep -q 'lz_' "${INSTANCE_LIST}" && rm -f "${INSTANCE_LIST}" > /dev/null 2>&1
     [ -f "${LOCK_FILE}" ] && flock -u "${LOCK_FILE_ID}" > /dev/null 2>&1
-    if [ "${drop_sys_caches}" = "0" ] && [ "${2}" != "${ISPIP_DATA_UPDATE}" ] && [ -f /proc/sys/vm/drop_caches ]; then
-        if [ "${2}" != "${SHOW_STATUS}" ] && [ "${2}" != "${ADDRESS_QUERY}" ] \
+    if [ "${drop_sys_caches}" = "0" ] && [ "${2}" != "${ISPIP_DATA_UPDATE}" ] && [ "${2}" != "${ISPIP_DATA_UPDATE_ID}" ] \
+        && [ -f /proc/sys/vm/drop_caches ]; then
+        if [ "${2}" != "${SHOW_STATUS}" ] && [ "${2}" != "${ADDRESS_QUERY}" ] && [ "${2}" != "${LAST_VERSION}" ] \
             && [ "${2}" != "${FORCED_UNLOCKING}" ]; then
             {
                 ip route flush cache \
@@ -440,6 +732,18 @@ lz_instance_exit() {
     ## 开机PPPoE失败时重启一次
     [ "${ppp0_restart}" = "1" ] && service "restart_wan_if 0;restart_stubby" > /dev/null 2>&1
     [ "${ppp1_restart}" = "1" ] && service "restart_wan_if 1;restart_stubby" > /dev/null 2>&1
+
+    ## 恢复系统原有asd进程
+    [ "${FUCK_ASD}" != "0" ] && recover_asd_process &
+
+    ## 在线安装软件最新版本重启
+    if [ "${2}" = "${UPGRADE_SOFTWARE}" ]; then
+        [ "${upgrade_restart}" ] && [ -s "${PATH_LZ}/${PROJECT_FILENAME}" ] && "${PATH_LZ}/${PROJECT_FILENAME}" &
+    ## 在线更新ISP运营商网段数据文件
+    elif [ "${2}" = "${ISPIP_DATA_UPDATE}" ]; then
+        [ "${restart_rule}" ] && [ -s "${PATH_LZ}/${PROJECT_FILENAME}" ] && "${PATH_LZ}/${PROJECT_FILENAME}" &
+        [ "${start_isp_data_update}" ] && [ -s "${PATH_LZ}/${UPDATE_FILENAME}" ] && "${PATH_LZ}/${UPDATE_FILENAME}" &
+    fi
 }
 
 ## 格式化路径文件名正则表达式字符串函数
@@ -470,14 +774,14 @@ lz_create_event_interface_file_header() {
     [ ! -s "${PATH_BOOTLOADER}/${1}" ] && echo "#!/bin/sh" >> "${PATH_BOOTLOADER}/${1}"
     [ ! -f "${PATH_BOOTLOADER}/${1}" ] && return "1"
     if ! grep -qm 1 '^#!/bin/sh$' "${PATH_BOOTLOADER}/${1}"; then
-        sed -i '/^[:space:]*#!\/bin\/sh/d' "${PATH_BOOTLOADER}/${1}"
+        sed -i '/^[[:space:]]*#!\/bin\/sh/d' "${PATH_BOOTLOADER}/${1}"
         if [ ! -s "${PATH_BOOTLOADER}/${1}" ]; then
             echo "#!/bin/sh" >> "${PATH_BOOTLOADER}/${1}"
         else
             sed -i '1i #!\/bin\/sh' "${PATH_BOOTLOADER}/${1}"
         fi
     fi
-    sed -i '2,${/^[:space:]*#!\/bin\/sh/d;/^[:space:]*$/d;}' "${PATH_BOOTLOADER}/${1}"
+    sed -i '2,${/^[[:space:]]*#!\/bin\/sh/d;/^[[:space:]]*$/d;}' "${PATH_BOOTLOADER}/${1}"
     return "0"
 }
 
@@ -802,10 +1106,12 @@ lz_mount_web_ui() {
         sed -i -e 's/^[[:space:]]*//g' -e 's/[[:space:]]*$//g' -e '/^$/d' "${PATH_WEBS}/LZ_Policy_Routing_Content.asp" > /dev/null 2>&1
         rm -f "${PATH_WEB_LZR}/"* > /dev/null 2>&1
         ln -s "${PATH_JS}/lz_policy_routing.js" "${PATH_WEB_LZR}/lz_policy_routing.js" > /dev/null 2>&1
-        ln -s "${PATH_IMAGES}/favicon.png" "${PATH_WEB_LZR}/favicon.png" > /dev/null 2>&1
-        ln -s "${PATH_IMAGES}/InternetScan.gif" "${PATH_WEB_LZR}/InternetScan.gif" > /dev/null 2>&1
+        ln -s "${PATH_IMAGES}/alipay.png" "${PATH_WEB_LZR}/alipay.png" > /dev/null 2>&1
         ln -s "${PATH_IMAGES}/arrow-down.gif" "${PATH_WEB_LZR}/arrow-down.gif" > /dev/null 2>&1
         ln -s "${PATH_IMAGES}/arrow-top.gif" "${PATH_WEB_LZR}/arrow-top.gif" > /dev/null 2>&1
+        ln -s "${PATH_IMAGES}/favicon.png" "${PATH_WEB_LZR}/favicon.png" > /dev/null 2>&1
+        ln -s "${PATH_IMAGES}/InternetScan.gif" "${PATH_WEB_LZR}/InternetScan.gif" > /dev/null 2>&1
+        ln -s "${PATH_IMAGES}/wechat.png" "${PATH_WEB_LZR}/wechat.png" > /dev/null 2>&1
         ln -s "${PATH_BOOTLOADER}/${BOOTLOADER_NAME}" "${PATH_WEB_LZR}/LZRState.html" > /dev/null 2>&1
         ln -s "${PATH_BOOTLOADER}/${SERVICE_EVENT_NAME}" "${PATH_WEB_LZR}/LZRService.html" > /dev/null 2>&1
         ln -s "${PATH_BOOTLOADER}/${OPENVPN_EVENT_NAME}" "${PATH_WEB_LZR}/LZROpenvpn.html" > /dev/null 2>&1
@@ -815,6 +1121,7 @@ lz_mount_web_ui() {
         ln -s "${PATH_CONFIGS}/lz_rule_config.sh" "${PATH_WEB_LZR}/LZRConfig.html" > /dev/null 2>&1
         ln -s "${PATH_CONFIGS}/lz_rule_config.box" "${PATH_WEB_LZR}/LZRBKData.html" > /dev/null 2>&1
         ln -s "${PATH_FUNC}/lz_define_global_variables.sh" "${PATH_WEB_LZR}/LZRGlobal.html" > /dev/null 2>&1
+        ln -s "${RT_LIST_LOG}" "${PATH_WEB_LZR}/LZRList.html" > /dev/null 2>&1
         ln -s "${STATUS_LOG}" "${PATH_WEB_LZR}/LZRStatus.html" > /dev/null 2>&1
         ln -s "${ADDRESS_LOG}" "${PATH_WEB_LZR}/LZRAddress.html" > /dev/null 2>&1
         ln -s "${ROUTING_LOG}" "${PATH_WEB_LZR}/LZRRouting.html" > /dev/null 2>&1
@@ -850,6 +1157,104 @@ lz_mount_web_ui() {
     return "${retval}"
 }
 
+## 获取软件仓库托管网站网址函数
+## 输入项：
+##     全局常量
+## 返回值：
+##     软件仓库托管网站网址
+lz_get_repo_site() {
+    local remoteRepo="https://gitee.com/"
+    local configFile="${PATH_CONFIGS}/lz_rule_config.box"
+    [ ! -s "${configFile}" ] && configFile="${PATH_CONFIGS}/lz_rule_config.sh"
+    eval "$( awk -F "=" '$0 ~ /^[[:space:]]*(lz_config_)?repo_site[=]/ {
+            key=$1;
+            gsub(/^[[:space:]]*(lz_config_)?/, "", key);
+            value=$2;
+            gsub(/[[:space:]#].*$/, "", value);
+            print key,value;
+        }' "${configFile}" 2> /dev/null \
+        | awk '!i[$1]++ {
+            if ($2 == "1")
+                print "remoteRepo=\"https://github.com/\"";
+        }' )"
+    echo "${remoteRepo}"
+}
+
+## 获取代理转发远程节点服务器自定义预解析DNS服务器地址函数
+## 输入项：
+##     全局常量
+## 返回值：
+##     自定义预解析DNS服务器地址
+get_pre_dns() {
+    local preDNS="8.8.8.8"
+    local configFile="${PATH_CONFIGS}/lz_rule_config.box"
+    [ ! -s "${configFile}" ] && configFile="${PATH_CONFIGS}/lz_rule_config.sh"
+    eval "$( awk -F "=" '$0 ~ /^[[:space:]]*(lz_config_)?pre_dns[=]/ && $2 ~ /^(|\")([0-9]+[\.]){3}[0-9]+(|\")$/ {
+            key=$1;
+            gsub(/^[[:space:]]*(lz_config_)?/, "", key);
+            value=$2;
+            gsub(/[[:space:]#].*$/, "", value);
+            gsub(/\"/, "", value);
+            if (key == "pre_dns") {
+                split(value, arr, ".");
+                if (arr[1] + 0 < 256 && arr[2] + 0 < 256 && arr[3] + 0 < 256 && arr[4] + 0 < 256) {
+                    print "preDNS=\""value"\"";
+                    delete arr;
+                    exit;
+                }
+                delete arr;
+            }
+        }' "${configFile}" 2> /dev/null )"
+    echo "${preDNS}"
+}
+
+## 获取软件最新版本信息函数
+## 输入项：
+##     $1--软件仓库托管网站网址
+##     全局常量
+## 返回值：
+##     软件最新版本信息
+lz_get_last_version() {
+    local ROGUE_TERM="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.88 Safari/537.36 Edg/108.0.1462.46"
+    local REF_URL="${1}larsonzh/amdwprprsct/blob/master/source_codes/lz/lz_rule.sh"
+    local SRC_URL="${1}larsonzh/amdwprprsct/raw/master/source_codes/lz/lz_rule.sh"
+    while true
+    do
+        [ "${1}" != "https://github.com/" ] && break
+        local retVal=""
+        local RAW_SITE="raw.githubusercontent.com"
+        REF_URL="${SRC_URL}"
+        SRC_URL="https://${RAW_SITE}/larsonzh/amdwprprsct/master/source_codes/lz/${PROJECT_FILENAME}"
+        local PRE_DNS="$( get_pre_dns )"
+        [ -z "${PRE_DNS}" ] && break
+        local SRC_IP="$( nslookup "${RAW_SITE}" "${PRE_DNS}" 2> /dev/null \
+            | awk 'NR > 4 && $3 ~ "'"^${REGEX_IPV4}$"'" {print $3; exit;}' )"
+        [ -n "${SRC_IP}" ] \
+            && retVal="$( /usr/sbin/curl -fsLC "-" -m 15 --retry 3 --resolve "${RAW_SITE}:443:${SRC_IP}" \
+                -A "${ROGUE_TERM}" \
+                -e "${REF_URL}" "${SRC_URL}" \
+                | grep -oEw 'LZ_VERSION=v[0-9]+([\.][0-9]+)+' | sed 's/LZ_VERSION=//g' | sed -n 1p )"
+        [ -z "${retVal}" ] && {
+            RAW_SITE="github.com"
+            REF_URL="${1}larsonzh/amdwprprsct/blob/master/source_codes/lz/${PROJECT_FILENAME}"
+            SRC_URL="${1}larsonzh/amdwprprsct/raw/master/source_codes/lz/${PROJECT_FILENAME}"
+            SRC_IP="$( nslookup "${RAW_SITE}" "${PRE_DNS}" 2> /dev/null \
+                | awk 'NR > 4 && $3 ~ "'"^${REGEX_IPV4}$"'" {print $3; exit;}' )"
+            [ -z "${SRC_IP}" ] && break
+            retVal="$( /usr/sbin/curl -fsLC "-" -m 15 --retry 3 --resolve "${RAW_SITE}:443:${SRC_IP}" \
+                -A "${ROGUE_TERM}" \
+                -e "${REF_URL}" "${PRE_DNS}" "${SRC_IP}" "${SRC_URL}" \
+                | grep -oEw 'LZ_VERSION=v[0-9]+([\.][0-9]+)+' | sed 's/LZ_VERSION=//g' | sed -n 1p )"
+        }
+        [ -z "${retVal}" ] && break
+        echo "${retVal}"
+        return
+    done
+    /usr/sbin/curl -fsLC "-" -m 15 --retry 3 \
+        -A "${ROGUE_TERM}" \
+        -e "${REF_URL}" "${SRC_URL}" \
+        | grep -oEw 'LZ_VERSION=v[0-9]+([\.][0-9]+)+' | sed 's/LZ_VERSION=//g' | sed -n 1p
+}
 
 ## ---------------------主执行脚本---------------------
 
@@ -931,7 +1336,7 @@ __lz_main() {
     ## 载入脚本配置参数
     ## 策略分流的用户自定义配置在/jffs/scripts/lz/configs/目录下的lz_rule_config.sh
     ## 和lz_rule_func_config.sh文件中
-    eval "${CALL_CONFIG_SUBROUTINE}/lz_rule_config.sh"
+    ## eval "${CALL_CONFIG_SUBROUTINE}/lz_rule_config.sh"
 
     ## 全局常量、变量定义及初始化
     ## 输入项：
@@ -1232,15 +1637,16 @@ __lz_main() {
 
 drop_sys_caches=0
 if [ -f "${PATH_CONFIGS}/lz_rule_config.box" ]; then
-    eval "$( awk -F "=" '$0 ~ /^[[:space:]]*lz_config_[[:alnum:]_]+[=]/ && $1 == "lz_config_drop_sys_caches" {
+    eval "$( awk -F "=" '$0 ~ /^[[:space:]]*lz_config_drop_sys_caches[=]/ {
             key=$1;
-            sub(/^lz_config_/, "", key);
+            sub(/^[[:space:]]*lz_config_/, "", key);
             value=$2;
             gsub(/[[:space:]#].*$/, "", value);
             if (value !~ /^[0-9]$/)
                 value=0
-            print key"="value;
-        }' "${PATH_CONFIGS}/lz_rule_config.box" )"
+            print key,value;
+        }' "${PATH_CONFIGS}/lz_rule_config.box" \
+        | awk '!i[$1]++ {print $1"="$2;}' )"
 fi
 
 ## 项目文件管理
@@ -1306,7 +1712,188 @@ if lz_project_file_management "${1}"; then
         ## 卸载WEB界面
         lz_unmount_web_ui
         echo "$(lzdate)" [$$]: Policy Routing Web UI has been unmounted. | tee -ai "${SYSLOG}" 2> /dev/null
+    elif [ "${1}" = "${LAST_VERSION}" ]; then
+        ## 检测软件最新版本信息函数
+        ## 输入项：
+        ##     全局常量
+        ## 返回值：无
+        llz_detect_version() {
+            {
+                echo "$(lzdate)" [$$]: "This process may take a long time."
+                echo "$(lzdate)" [$$]: "Don't interrupt & Please wait......"
+                echo "$(lzdate)" [$$]: ---------------------------------------------
+            } | tee -ai "${SYSLOG}" 2> /dev/null
+            local LZ_REPO="$( lz_get_repo_site )"
+            local remoteVer="$( lz_get_last_version "${LZ_REPO}" )"
+            if [ -n "${remoteVer}" ]; then
+                {
+                    echo "$(lzdate)" [$$]: "Current Version: ${LZ_VERSION}"
+                    echo "$(lzdate)" [$$]: " Latest Version: ${remoteVer}"
+                    echo "$(lzdate)" [$$]: "${LZ_REPO}larsonzh/amdwprprsct"
+                } | tee -ai "${SYSLOG}" 2> /dev/null
+            else
+                {
+                    echo "$(lzdate)" [$$]: "Current Version: ${LZ_VERSION}"
+                    echo "$(lzdate)" [$$]: " Latest Version: unknown"
+                    echo "$(lzdate)" [$$]: "${LZ_REPO}larsonzh/amdwprprsct"
+                    echo "$(lzdate)" [$$]: "Failed to obtain the latest version information of this software online."
+                } | tee -ai "${SYSLOG}" 2> /dev/null
+            fi
+        }
+        llz_detect_version
+    elif [ "${1}" = "${UPGRADE_SOFTWARE}" ]; then
+        llz_do_update() {
+            {
+                echo "$(lzdate)" [$$]: "This process may take a long time."
+                echo "$(lzdate)" [$$]: "Don't interrupt & Please wait......"
+                echo "$(lzdate)" [$$]: ---------------------------------------------
+            } | tee -ai "${SYSLOG}" 2> /dev/null
+            [ -d "${PATH_LZ}/tmp/doupdate" ] && rm -rf "${PATH_LZ}/tmp/doupdate" 2> /dev/null
+            local LZ_REPO="$( lz_get_repo_site )"
+            local remoteVer="$( lz_get_last_version "${LZ_REPO}" )"
+            if [ -n "${remoteVer}" ]; then
+                {
+                    echo "$(lzdate)" [$$]: "Latest Version: ${remoteVer}"
+                    echo "$(lzdate)" [$$]: "${LZ_REPO}larsonzh/amdwprprsct"
+                } | tee -ai "${SYSLOG}" 2> /dev/null
+                mkdir -p "${PATH_LZ}/tmp/doupdate" 2> /dev/null
+                local ROGUE_TERM="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/107.0.5304.88 Safari/537.36 Edg/108.0.1462.46"
+                local REF_URL="${LZ_REPO}larsonzh/amdwprprsct/blob/master/installation_package/lz_rule-${remoteVer}.tgz"
+                local SRC_URL="${LZ_REPO}larsonzh/amdwprprsct/raw/master/installation_package/lz_rule-${remoteVer}.tgz"
+                while true
+                do
+                    [ "${LZ_REPO}" != "https://github.com/" ] && break
+                    local RAW_SITE="raw.githubusercontent.com"
+                    REF_URL="${SRC_URL}"
+                    SRC_URL="https://${RAW_SITE}/larsonzh/amdwprprsct/master/installation_package/lz_rule-${remoteVer}.tgz"
+                    local PRE_DNS="$( get_pre_dns )"
+                    [ -z "${PRE_DNS}" ] && break
+                    local SRC_IP="$( nslookup "${RAW_SITE}" "${PRE_DNS}" 2> /dev/null \
+                        | awk 'NR > 4 && $3 ~ "'"^${REGEX_IPV4}$"'" {print $3; exit;}' )"
+                    [ -n "${SRC_IP}" ] \
+                        && /usr/sbin/curl -fsLC "-" --retry 3 --resolve "${RAW_SITE}:443:${SRC_IP}" \
+                            -A "${ROGUE_TERM}" \
+                            -e "${REF_URL}" "${SRC_URL}" -o "${PATH_LZ}/tmp/doupdate/lz_rule-${remoteVer}.tgz"
+                    [ ! -f "${PATH_LZ}/tmp/doupdate/lz_rule-${remoteVer}.tgz" ] && {
+                        RAW_SITE="github.com"
+                        REF_URL="${LZ_REPO}larsonzh/amdwprprsct/blob/master/installation_package/lz_rule-${remoteVer}.tgz"
+                        SRC_URL="${LZ_REPO}larsonzh/amdwprprsct/raw/master/installation_package/lz_rule-${remoteVer}.tgz"
+                        SRC_IP="$( nslookup "${RAW_SITE}" "${PRE_DNS}" 2> /dev/null \
+                            | awk 'NR > 4 && $3 ~ "'"^${REGEX_IPV4}$"'" {print $3; exit;}' )"
+                        [ -z "${SRC_IP}" ] && break
+                        /usr/sbin/curl -fsLC "-" --retry 3 --resolve "${RAW_SITE}:443:${SRC_IP}" \
+                            -A "${ROGUE_TERM}" \
+                            -e "${REF_URL}" "${SRC_URL}" -o "${PATH_LZ}/tmp/doupdate/lz_rule-${remoteVer}.tgz"
+                    }
+                    break
+                done
+                [ ! -f "${PATH_LZ}/tmp/doupdate/lz_rule-${remoteVer}.tgz" ] \
+                    && /usr/sbin/curl -fsLC "-" --retry 3 \
+                        -A "${ROGUE_TERM}" \
+                        -e "${REF_URL}" "${SRC_URL}" -o "${PATH_LZ}/tmp/doupdate/lz_rule-${remoteVer}.tgz"
+                if [ -f "${PATH_LZ}/tmp/doupdate/lz_rule-${remoteVer}.tgz" ]; then
+                    echo "$(lzdate)" [$$]: "Successfully downloaded lz_rule-${remoteVer}.tgz from ${LZ_REPO}larsonzh/amdwprprsct." | tee -ai "${SYSLOG}" 2> /dev/null
+                    tar -xzf "${PATH_LZ}/tmp/doupdate/lz_rule-${remoteVer}.tgz" -C "${PATH_LZ}/tmp/doupdate"
+                    rm -f "${PATH_LZ}/tmp/doupdate/lz_rule-${remoteVer}.tgz" 2> /dev/null
+                    if [ -s "${PATH_LZ}/tmp/doupdate/lz_rule-${remoteVer}/install.sh" ]; then
+                        chmod 775 "${PATH_LZ}/tmp/doupdate/lz_rule-${remoteVer}/install.sh"
+                        sed -i "s/elif \[ \"\${USER}\" = \"root\" \]; then/elif \[ \"\${USER}\" = \"\" \]; then/g" "${PATH_LZ}/tmp/doupdate/lz_rule-${remoteVer}/install.sh" 2> /dev/null
+                        local oldRemote="$( awk -v ver="${remoteVer##*v}" 'BEGIN{
+                            ret = 0;
+                            split(ver, arr, ".");
+                            for (i = 1; i < 4; ++i) {
+                                if (arr[i] !~ /[0-9]+/)
+                                    arr[i] = 0 + 0;
+                                else
+                                    arr[i] = arr[i] + 0;
+                            }
+                            if (arr[1] == 4 && arr[2] == 6 && arr[3] >= 8)
+                                ret = 1;
+                            else if (arr[1] == 4 && arr[2] > 6)
+                                ret = 1;
+                            else if (arr[1] > 4)
+                                ret = 1;
+                            delete arr;
+                            print ret;
+                        }' )"
+                        if [ "${oldRemote}" != "0" ]; then
+                            if [ "${PATH_LZ}" = "/jffs/scripts/lz" ]; then
+                                "${PATH_LZ}/tmp/doupdate/lz_rule-${remoteVer}/install.sh" "X" && upgrade_restart="1"
+                            else
+                                "${PATH_LZ}/tmp/doupdate/lz_rule-${remoteVer}/install.sh" "entwareX" && upgrade_restart="1"
+                            fi
+                        else
+                            if [ "${PATH_LZ}" = "/jffs/scripts/lz" ]; then
+                                "${PATH_LZ}/tmp/doupdate/lz_rule-${remoteVer}/install.sh" && upgrade_restart="1"
+                            else
+                                "${PATH_LZ}/tmp/doupdate/lz_rule-${remoteVer}/install.sh" "entware" && upgrade_restart="1"
+                            fi
+                        fi
+                    else
+                        {
+                            echo "$(lzdate)" [$$]: "The installation package is damaged."
+                            echo "$(lzdate)" [$$]: "The online installation of the latest version of this software failed."
+                        } | tee -ai "${SYSLOG}" 2> /dev/null
+                    fi
+                else
+                    {
+                        echo "$(lzdate)" [$$]: "Failed to download lz_rule-${remoteVer}.tgz from ${LZ_REPO}larsonzh/amdwprprsct."
+                        echo "$(lzdate)" [$$]: "The online installation of the latest version of this software failed."
+                    } | tee -ai "${SYSLOG}" 2> /dev/null
+                fi
+                rm -rf "${PATH_LZ}/tmp/doupdate" 2> /dev/null
+            else
+                {
+                    echo "$(lzdate)" [$$]: "Latest Version: unknown (${LZ_REPO}larsonzh/amdwprprsct)"
+                    echo "$(lzdate)" [$$]: "The online installation of the latest version of this software failed."
+                } | tee -ai "${SYSLOG}" 2> /dev/null
+            fi
+        }
+        llz_do_update
+    elif [ "${1}" = "${ISPIP_DATA_UPDATE}" ]; then
+        {
+            echo "$(lzdate)" [$$]: "This process may take a long time."
+            echo "$(lzdate)" [$$]: "Don't interrupt & Please wait......"
+            echo "$(lzdate)" [$$]: ---------------------------------------------
+            echo "$(lzdate)" [$$]:
+        } | tee -ai "${SYSLOG}" 2> /dev/null
+        [ ! -s "${PATH_LZ}/${UPDATE_FILENAME}" ] && restart_rule="1"
+        start_isp_data_update="1"
+    elif [ "${1}" = "${DISABLE_ASD}" ]; then
+        if [ "${FUCK_ASD}" != "0" ]; then
+            sed -i 's/^[[:space:]]*FUCK_ASD[=].*$/FUCK_ASD=0/g' "${PATH_LZ}/${PROJECT_FILENAME}"
+            [ "${FUCK_ASD}" != "0" ] && FUCK_ASD=0
+            fuck_asd_process
+            if ps | grep -qE '[[:space:]\/]asd([[:space:]]|$)'; then
+                echo "$(lzdate)" [$$]: "The System ASD Process has been successfully disabled." | tee -ai "${SYSLOG}" 2> /dev/null
+            else
+                echo "$(lzdate)" [$$]: "No System ASD Process is running." | tee -ai "${SYSLOG}" 2> /dev/null
+            fi
+        else
+            if ps | grep -qE '[[:space:]\/]asd([[:space:]]|$)'; then
+                echo "$(lzdate)" [$$]: "The System ASD Process has been disabled." | tee -ai "${SYSLOG}" 2> /dev/null
+            else
+                echo "$(lzdate)" [$$]: "No System ASD Process is running." | tee -ai "${SYSLOG}" 2> /dev/null
+            fi
+        fi
+    elif [ "${1}" = "${RECOVER_ASD}" ]; then
+        if [ "${FUCK_ASD}" = "0" ]; then
+            sed -i 's/^[[:space:]]*FUCK_ASD[=].*$/FUCK_ASD=5/g' "${PATH_LZ}/${PROJECT_FILENAME}"
+            [ "${FUCK_ASD}" = "0" ] && FUCK_ASD=5
+            if ps | grep -qE '[[:space:]\/]asd([[:space:]]|$)'; then
+                echo "$(lzdate)" [$$]: "The System ASD Process has been successfully recovered." | tee -ai "${SYSLOG}" 2> /dev/null
+            else
+                echo "$(lzdate)" [$$]: "No System ASD Process is running." | tee -ai "${SYSLOG}" 2> /dev/null
+            fi
+        else
+            if ps | grep -qE '[[:space:]\/]asd([[:space:]]|$)'; then
+                echo "$(lzdate)" [$$]: "The System ASD Process is running." | tee -ai "${SYSLOG}" 2> /dev/null
+            else
+                echo "$(lzdate)" [$$]: "No System ASD Process is running." | tee -ai "${SYSLOG}" 2> /dev/null
+            fi
+        fi
     else
+        echo > "${RT_LIST_LOG}" 2> /dev/null
         echo > "${STATUS_LOG}" 2> /dev/null
         echo > "${ADDRESS_LOG}" 2> /dev/null
         echo > "${ROUTING_LOG}" 2> /dev/null
@@ -1367,17 +1954,19 @@ if lz_project_file_management "${1}"; then
     fi
 fi
 
-if [ "${1}" != "${SHOW_STATUS}" ] && [ "${1}" != "${ADDRESS_QUERY}" ] \
-    && [ "${1}" != "${FORCED_UNLOCKING}" ]; then
-    {
-        echo "$(lzdate)" [$$]: ---------------------------------------------
+if [ "${1}" != "${ISPIP_DATA_UPDATE}" ]; then
+    if [ "${1}" != "${SHOW_STATUS}" ] && [ "${1}" != "${ADDRESS_QUERY}" ] \
+        && [ "${1}" != "${FORCED_UNLOCKING}" ]; then
+        {
+            echo "$(lzdate)" [$$]: ---------------------------------------------
+            echo "$(lzdate)" [$$]: LZ "${LZ_VERSION}" script commands executed!
+            echo "$(lzdate)" [$$]:
+        } | tee -ai "${SYSLOG}" 2> /dev/null
+    else
+        [ "${1}" != "${ADDRESS_QUERY}" ] && echo "$(lzdate)" [$$]: ---------------------------------------------
         echo "$(lzdate)" [$$]: LZ "${LZ_VERSION}" script commands executed!
         echo "$(lzdate)" [$$]:
-    } | tee -ai "${SYSLOG}" 2> /dev/null
-else
-    [ "${1}" != "${ADDRESS_QUERY}" ] && echo "$(lzdate)" [$$]: ---------------------------------------------
-    echo "$(lzdate)" [$$]: LZ "${LZ_VERSION}" script commands executed!
-    echo "$(lzdate)" [$$]:
+    fi
 fi
 
 lz_instance_exit "${0}" "${1}"

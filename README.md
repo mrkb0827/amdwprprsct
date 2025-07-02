@@ -1,9 +1,9 @@
 # amdwprprsct
-Asuswrt-Merlin dual WAN port router policy routing service configuration tool
+Asuswrt-Merlin Router Dual-WAN Policy Routing Configuration Tool
 
-华硕梅林固件路由器外网双线路接入策略路由服务配置工具
+华硕梅林路由器双线路策略路由配置工具
 
-**v4.4.4**
+**v4.7.4**
 
 本软件不是为实现网络带速叠加应用而设计，也不专注于实现路由器多个出口链路网络或带宽的聚合，而是用于在双线路接入路由器的不同网络出口之间精准控制 IPv4 协议网络访问经由路径，可有效解决路由器双线路接入时不能正常登录和访问网站，以及网络访问卡慢、断流、不稳定等问题，提高路由器使用的稳定性、流畅性和带宽资源利用率，挖掘和发挥设备潜能和剩余价值，减少设备重复采购，改善电磁环境，提高生活质量。避免因 WiFi 信号太多，经常为切换使用SSID而纠结，预防选择恐惧症。
 
@@ -17,7 +17,7 @@ Asuswrt-Merlin dual WAN port router policy routing service configuration tool
 
 在不断迭代和改善的过程中，本软件始终保持良好的向下兼容性，建议用户尽可能使用当前最新版本软件。
 
-[适用设备清单 \(包括但不限于\)](https://www.asuswrt-merlin.net)
+[适用设备清单 \(包括但不限于\)](https://www.asuswrt-merlin.net/)
 
 [软件安装说明](/华硕梅林策略路由软件安装说明.md)
 
@@ -78,9 +78,12 @@ Asuswrt-Merlin dual WAN port router policy routing service configuration tool
 
 ### 六、应用界面
 
-| ![lz_rule](/images/lz_rule.jpg) | ![lz_rule_rog](/images/lz_rule_rog.jpg) |
+| ![Basic](/images/Basic.PNG) | ![Advanced](/images/Advanced.PNG) |
 |--------------------------------------------------|--------------------------------------------------|
-| ![lz_rule_status](/images/lz_rule_status.jpg) | ![lz_rule_tools](/images/lz_rule_tools.jpg) |
+| ![Runtime](/images/Runtime.PNG) | ![IPTV](/images/IPTV.PNG) |
+| ![InsertScript](/images/InsertScript.PNG) | ![lz_rule_rog](/images/lz_rule_rog.jpg) |
+| ![Tools_1](/images/Tools_1.PNG) | ![Tools_2](/images/Tools_2.PNG) |
+| ![Donation](/images/Donation.PNG) ||
 
 ### 七、相关资料
 - [华硕改版固件路由器双线路双拨策略分流方案教程（入门必读）](/华硕改版固件路由器双线路双拨策略分流方案教程.pdf)
